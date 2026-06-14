@@ -359,7 +359,7 @@ async def clear_xiaomi_cookies(context) -> None:
     await asyncio.sleep(1)
 
 
-async def handle_identity_verification(page, user: str, domain: str, fast: bool = False) -> bool:
+async def handle_identity_verification(page, user: str, domain: str, fast: bool = False, first_otp: str = None) -> bool:
     """Handle Xiaomi identity verification page (verifyEmail).
 
     This page appears AFTER initial OTP for some accounts.
@@ -426,10 +426,11 @@ async def handle_identity_verification(page, user: str, domain: str, fast: bool 
     # Wait for code input to appear
     await asyncio.sleep(3)
 
-    # Get second verification code from temp email
+    # Get second verification code from temp email (skip first OTP code)
     print("  [verify] Waiting for verification code...")
     from mimo_farmer.email_handler import wait_for_otp
-    code = await wait_for_otp(page, user, domain, timeout=120)
+    skip = [first_otp] if first_otp else []
+    code = await wait_for_otp(page, user, domain, timeout=120, skip_codes=skip)
 
     if not code:
         print("  [!] Verification code not received!")
@@ -750,7 +751,7 @@ async def create_account(
 
         # Phase 5.5: Identity verification (may appear for some accounts)
         print("[6.5] Checking for identity verification...")
-        verify_handled = await handle_identity_verification(page, user, domain, fast)
+        verify_handled = await handle_identity_verification(page, user, domain, fast, first_otp=code)
         if verify_handled:
             print("  Identity verification handled!")
             timer.phase("Identity verification")

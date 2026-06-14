@@ -20,7 +20,7 @@ def random_email() -> tuple[str, str, str]:
     return f"{user}@{domain}", user, domain
 
 
-async def wait_for_otp(page, user: str, domain: str, timeout: int = OTP_TIMEOUT_SECONDS) -> str | None:
+async def wait_for_otp(page, user: str, domain: str, timeout: int = OTP_TIMEOUT_SECONDS, skip_codes: list = None) -> str | None:
     """Poll generator.email inbox for 6-digit OTP code.
 
     Opens new tab in same browser context, polls until code found or timeout.
@@ -44,6 +44,10 @@ async def wait_for_otp(page, user: str, domain: str, timeout: int = OTP_TIMEOUT_
     start = time.time()
     code = None
     check_count = 0
+    if skip_codes is None:
+        skip_codes = set()
+    else:
+        skip_codes = set(skip_codes)
 
     while time.time() - start < timeout:
         check_count += 1
@@ -52,8 +56,8 @@ async def wait_for_otp(page, user: str, domain: str, timeout: int = OTP_TIMEOUT_
             codes = re.findall(r'\b(\d{6})\b', body)
 
             if codes:
-                # Filter out year-like codes starting with '20'
-                otp_codes = [c for c in codes if not c.startswith('20')]
+                # Filter out year-like codes starting with '20' AND already-seen codes
+                otp_codes = [c for c in codes if not c.startswith('20') and c not in skip_codes]
                 if otp_codes:
                     code = otp_codes[0]
                     print(f"  [otp] Found code: {code} (check #{check_count})")
