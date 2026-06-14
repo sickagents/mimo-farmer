@@ -140,134 +140,106 @@ async def handle_dialogs(page, fast: bool = False):
 
 
 async def handle_terms_dialog(page, fast: bool = False):
-    """Handle Terms modal — WAIT for it to appear, then click.
+    """Handle Terms modal — WAIT for it to appear, then check checkbox + confirm.
 
-    Key fix: don't try to click before popup is actually visible.
-    Uses Playwright wait_for_selector with timeout to detect popup.
+    PROVEN FIX (2026-06-15): Use page.locator('input[type="checkbox"]').click()
+    instead of clicking label/span wrappers. The input click sends a trusted event
+    that React recognizes, properly updating internal state and enabling Confirm.
     """
     # Step 1: Wait for Terms popup to actually appear (up to 10s)
     terms_appeared = False
     for wait_attempt in range(3):
         try:
-            # Wait for a checkbox to be visible (the Terms checkbox)
             await page.wait_for_selector(
                 'input[type="checkbox"]:visible, [role="checkbox"]:visible',
                 timeout=4000,
                 state='visible'
             )
-            # Verify it's near "Terms" text
             body = await page.evaluate("document.body?.innerText || ''")
             if 'Terms' in body or 'Agreement' in body or 'agree' in body.lower():
                 terms_appeared = True
                 print(f"  Terms popup detected (attempt {wait_attempt + 1})")
                 break
         except Exception:
-            # Maybe checkbox loaded but text not yet — wait and retry
             await asyncio.sleep(2)
 
     if not terms_appeared:
         print("  No terms popup found after waiting")
         return False
 
-    # Step 2: Click Ant Design checkbox — MUST click label wrapper for React state update
-    # Ant Design checkbox structure:
-    #   label.ant-checkbox-wrapper > span.ant-checkbox > input.ant-checkbox-input + span.ant-checkbox-inner
-    # Clicking input directly doesn't trigger React. Must click label or span.ant-checkbox-inner.
+    # Step 2: Click checkbox via native input — trusted click that React recognizes
     await asyncio.sleep(1)
     checkbox_checked = False
 
-    # Click targets in order of reliability for Ant Design
-    for cb_target in [
-        'label.ant-checkbox-wrapper',       # Outermost label — most reliable
-        '.ant-checkbox-inner',              # Visible checkbox square
-        'span.ant-checkbox',                # Checkbox wrapper span
-    ]:
-        try:
-            el = page.locator(cb_target).first
-            await el.click(force=True)
-            await asyncio.sleep(2)  # Wait for React state update + re-render
+    # Primary: click the actual checkbox input element
+    try:
+        await page.locator('input[type="checkbox"]').click()
+        await asyncio.sleep(2)  # Wait for React state update
 
-            # Verify: is checkbox ACTUALLY checked?
-            is_checked = await page.evaluate(
-                "document.querySelector('.ant-checkbox-input')?.checked || false"
-            )
-            # Verify: is Confirm button ACTUALLY enabled?
-            is_disabled = await page.evaluate(
-                "document.querySelector('.ant-modal-footer button:last-child')?.disabled ?? true"
-            )
-            print(f"  Clicked {cb_target}: checked={is_checked}, confirm_disabled={is_disabled}")
-
-            if is_checked and not is_disabled:
-                checkbox_checked = True
-                print(f"  ✓ Checkbox checked, Confirm enabled!")
-                break
-            elif is_checked:
-                # Checkbox checked but Confirm still disabled — wait more
-                await asyncio.sleep(1)
-                is_disabled2 = await page.evaluate(
-                    "document.querySelector('.ant-modal-footer button:last-child')?.disabled ?? true"
-                )
-                if not is_disabled2:
-                    checkbox_checked = True
-                    print(f"  ✓ Checkbox checked, Confirm enabled (after extra wait)!")
-                    break
-        except Exception as e:
-            print(f"  {cb_target} error: {str(e)[:50]}")
-            continue
-
-    # Last resort: force toggle checkbox state via React internals
-    if not checkbox_checked:
-        try:
-            await page.evaluate('''() => {
-                const input = document.querySelector('.ant-checkbox-input');
-                if (input) {
-                    // Simulate native click which React listens to
-                    const rect = input.getBoundingClientRect();
-                    const x = rect.left + rect.width / 2;
-                    const y = rect.top + rect.height / 2;
-                    input.dispatchEvent(new MouseEvent('click', {bubbles: true, clientX: x, clientY: y}));
-                }
-            }''')
-            await asyncio.sleep(2)
-            is_checked = await page.evaluate(
-                "document.querySelector('.ant-checkbox-input')?.checked || false"
-            )
-            is_disabled = await page.evaluate(
-                "document.querySelector('.ant-modal-footer button:last-child')?.disabled ?? true"
-            )
-            print(f"  Force dispatch: checked={is_checked}, confirm_disabled={is_disabled}")
-            if is_checked and not is_disabled:
-                checkbox_checked = True
-        except Exception:
-            pass
-
-    if not checkbox_checked:
-        # Final check: maybe checkbox IS checked but we couldn't verify
         is_checked = await page.evaluate(
             "document.querySelector('.ant-checkbox-input')?.checked || false"
         )
-        if not is_checked:
+        is_disabled = await page.evaluate(
+            "document.querySelector('.ant-modal-footer button:last-child')?.disabled ?? true"
+        )
+        print(f"  input[checkbox] click: checked={is_checked}, confirm_disabled={is_disabled}")
+
+        if is_checked and not is_disabled:
+            checkbox_checked = True
+            print("  ✓ Checkbox checked, Confirm enabled!")
+    except Exception as e:
+        print(f"  input[checkbox] click error: {str(e)[:80]}")
+
+    # Fallback: try .ant-checkbox-input selector
+    if not checkbox_checked:
+        try:
+            await page.locator('.ant-checkbox-input').click()
+            await asyncio.sleep(2)
+
+            is_checked = await page.evaluate(
+                "document.querySelector('.ant-checkbox-input')?.checked || false"
+            )
+            is_disabled = await page.evaluate(
+                "document.querySelector('.ant-modal-footer button:last-child')?.disabled ?? true"
+            )
+            print(f"  .ant-checkbox-input click: checked={is_checked}, confirm_disabled={is_disabled}")
+
+            if is_checked and not is_disabled:
+                checkbox_checked = True
+                print("  ✓ Checkbox checked via fallback, Confirm enabled!")
+        except Exception as e:
+            print(f"  .ant-checkbox-input click error: {str(e)[:80]}")
+
+    if not checkbox_checked:
+        # Final check: maybe checkbox IS checked but Confirm timing off
+        is_checked = await page.evaluate(
+            "document.querySelector('.ant-checkbox-input')?.checked || false"
+        )
+        if is_checked:
+            # Extra wait — Confirm may enable after another render cycle
+            await asyncio.sleep(2)
+            is_disabled = await page.evaluate(
+                "document.querySelector('.ant-modal-footer button:last-child')?.disabled ?? true"
+            )
+            if not is_disabled:
+                checkbox_checked = True
+                print("  ✓ Checkbox checked, Confirm enabled (after extra wait)!")
+            else:
+                print("  [!] Checkbox checked but Confirm still disabled")
+                return False
+        else:
             print("  [!] Could not check checkbox — skipping terms")
             return False
 
-    # Step 3: Click Confirm button — MUST verify modal actually closes
+    # Step 3: Click Confirm button
     await asyncio.sleep(0.5)
 
-    # First verify Confirm is enabled
-    confirm_disabled = await page.evaluate(
-        "document.querySelector('.ant-modal-footer button:last-child')?.disabled ?? true"
-    )
-    if confirm_disabled:
-        print("  [!] Confirm still disabled despite checkbox — trying force click anyway")
-
-    # Click Confirm via Playwright (most reliable for button clicks)
     confirm_clicked = False
     try:
         confirm_btn = page.locator('.ant-modal-footer button:last-child')
-        await confirm_btn.click(force=True, timeout=5000)
+        await confirm_btn.click(timeout=5000)
         await asyncio.sleep(2)
 
-        # Verify: did modal close?
         modal_visible = await page.locator('.ant-modal-wrap:visible').count()
         if modal_visible == 0:
             print("  ✓ Confirm clicked, modal closed!")
@@ -275,7 +247,7 @@ async def handle_terms_dialog(page, fast: bool = False):
         else:
             print(f"  Modal still visible after click ({modal_visible}), trying JS...")
     except Exception as e:
-        print(f"  Playwright confirm click failed: {str(e)[:50]}")
+        print(f"  Playwright confirm click failed: {str(e)[:80]}")
 
     # Fallback: JS click
     if not confirm_clicked:
@@ -940,9 +912,14 @@ async def create_account(
         timer.phase("Risk control check")
 
         # Phase 10: Verify balance — MUST be $2.72 before continuing
+        # Skip wait when risk_control detected — $2.72 won't arrive
         print("[11] Verifying balance...")
-        balance = await wait_for_balance_272(page, timeout=10)
-        print(f"  Balance: {balance}")
+        if risk_control:
+            balance = await extract_balance(page)
+            print(f"  Balance: {balance} (risk control — skipped 10s wait)")
+        else:
+            balance = await wait_for_balance_272(page, timeout=10)
+            print(f"  Balance: {balance}")
         timer.phase("Balance verify")
 
         if balance != "$2.72":
