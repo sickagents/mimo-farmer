@@ -140,38 +140,87 @@ async def handle_dialogs(page, fast: bool = False):
 
 
 async def handle_terms_dialog(page, fast: bool = False):
-    """Handle the Terms modal specifically (ant-modal pattern).
+    """Handle Terms modal — works for ant-modal AND custom modals.
 
-    CRITICAL: .ant-modal:has-text('Terms') → input[type='checkbox'] → button:has-text('Confirm')
+    Patterns:
+    - .ant-modal:has-text('Terms') → checkbox → Confirm
+    - [role='dialog']:has-text('Terms') → checkbox → Confirm
+    - div:has-text('Terms & Agreements') → checkbox → Confirm
+    - Fallback: any visible checkbox + Confirm button on page
     """
     for attempt in range(5):
-        # Check if ant-modal with Terms is visible
-        modal = page.locator('.ant-modal:has-text("Terms")')
-        modal_count = await modal.count()
+        handled = False
 
-        if modal_count > 0:
-            print(f"  Found Terms modal (attempt {attempt + 1})")
-
-            # Click checkbox inside the modal
-            checkbox = modal.locator('input[type="checkbox"]')
-            cb_count = await checkbox.count()
-            if cb_count > 0:
-                await checkbox.first.click(force=True)
-                await asyncio.sleep(0.8)
-                print("  Checkbox clicked!")
-
-            # Click Confirm button
-            confirm = modal.locator('button:has-text("Confirm")')
-            conf_count = await confirm.count()
-            if conf_count > 0:
-                await confirm.first.click(force=True)
-                await asyncio.sleep(1.5)
-                print("  Confirm clicked!")
-                return True
-
-        # Fallback: any visible checkbox + Confirm button
+        # Strategy 1: ant-modal with Terms
         try:
-            cb = page.locator('input[type="checkbox"]:visible')
+            modal = page.locator('.ant-modal:has-text("Terms")')
+            if await modal.count() > 0:
+                print(f"  Found ant-modal Terms (attempt {attempt + 1})")
+                cb = modal.locator('input[type="checkbox"]')
+                if await cb.count() > 0:
+                    await cb.first.click(force=True)
+                    await asyncio.sleep(0.8)
+                    print("  Checkbox clicked!")
+                confirm = modal.locator('button:has-text("Confirm")')
+                if await confirm.count() > 0:
+                    await confirm.first.click(force=True)
+                    await asyncio.sleep(1.5)
+                    print("  Confirm clicked!")
+                    return True
+                handled = True
+        except Exception:
+            pass
+
+        # Strategy 2: role=dialog with Terms
+        if not handled:
+            try:
+                modal = page.locator('[role="dialog"]:has-text("Terms")')
+                if await modal.count() > 0:
+                    print(f"  Found role=dialog Terms (attempt {attempt + 1})")
+                    cb = modal.locator('input[type="checkbox"], [role="checkbox"]')
+                    if await cb.count() > 0:
+                        await cb.first.click(force=True)
+                        await asyncio.sleep(0.8)
+                        print("  Checkbox clicked!")
+                    confirm = modal.locator('button:has-text("Confirm")')
+                    if await confirm.count() > 0:
+                        await confirm.first.click(force=True)
+                        await asyncio.sleep(1.5)
+                        print("  Confirm clicked!")
+                        return True
+                    handled = True
+            except Exception:
+                pass
+
+        # Strategy 3: any div containing "Terms & Agreements" or "Agreements"
+        if not handled:
+            try:
+                modal = page.locator('div:has-text("Terms & Agreements"):visible, div:has-text("Agreements"):visible')
+                if await modal.count() > 0:
+                    print(f"  Found Terms & Agreements div (attempt {attempt + 1})")
+                    # Try multiple checkbox selectors
+                    for cb_sel in ['input[type="checkbox"]', '[role="checkbox"]', '.ant-checkbox', 'label:has-text("agree")']:
+                        cb = page.locator(cb_sel)
+                        if await cb.count() > 0:
+                            await cb.first.click(force=True)
+                            await asyncio.sleep(0.8)
+                            print(f"  Checkbox clicked ({cb_sel})!")
+                            break
+                    # Click Confirm
+                    for btn_text in ['Confirm', 'Agree', 'Accept', 'OK']:
+                        btn = page.get_by_role('button', name=btn_text)
+                        if await btn.count() > 0:
+                            await btn.first.click(force=True)
+                            await asyncio.sleep(1.5)
+                            print(f"  '{btn_text}' clicked!")
+                            return True
+                    handled = True
+            except Exception:
+                pass
+
+        # Strategy 4: broad fallback — any visible checkbox + Confirm button
+        try:
+            cb = page.locator('input[type="checkbox"]:visible, [role="checkbox"]:visible')
             if await cb.count() > 0:
                 await cb.first.click(force=True)
                 await asyncio.sleep(0.8)
@@ -186,7 +235,7 @@ async def handle_terms_dialog(page, fast: bool = False):
 
         await asyncio.sleep(1.5)
 
-    print("  [!] Terms dialog NOT handled!")
+    print("  No terms dialog found, continuing...")
     return False
 
 
@@ -427,18 +476,14 @@ async def handle_identity_verification(page, user: str, domain: str, fast: bool 
     await asyncio.sleep(3)
 
     # Get second verification code from temp email (skip first OTP code)
-    # If no NEW code arrives in 30s, fall back to first code (Xiaomi sometimes reuses it)
-    print("  [verify] Waiting for verification code...")
+    # Keep refreshing until NEW code arrives — NO fallback to same code
+    print("  [verify] Waiting for NEW verification code (refreshing until found)...")
     from mimo_farmer.email_handler import wait_for_otp
     skip = [first_otp] if first_otp else []
-    code = await wait_for_otp(page, user, domain, timeout=30, skip_codes=skip)
-
-    if not code and first_otp:
-        print(f"  [verify] No new code found, trying first OTP: {first_otp}")
-        code = first_otp
+    code = await wait_for_otp(page, user, domain, timeout=180, skip_codes=skip)
 
     if not code:
-        print("  [!] Verification code not received!")
+        print("  [!] Verification code not received after 180s!")
         return True
 
     print(f"  [verify] Got verification code: {code}")
