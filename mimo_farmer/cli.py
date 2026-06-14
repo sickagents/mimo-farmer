@@ -119,19 +119,22 @@ def cmd_create(args) -> int:
     fast = args.fast
     parallel = args.parallel
 
-    # Interactive prompts when flags not provided
-    if referral == DEFAULT_REFERRAL_CODE:
-        user_input = input(f"Kode referral [{DEFAULT_REFERRAL_CODE}]: ").strip()
-        if user_input:
-            referral = user_input.upper()
+    # Interactive prompts — WAJIB diisi
+    while True:
+        referral = input("Kode referral: ").strip().upper()
+        if referral:
+            break
+        print("  [!] Kode referral wajib diisi!")
 
-    if args.count == 1:
-        user_input = input("Mau bikin berapa akun? [1]: ").strip()
-        if user_input:
-            try:
-                count = int(user_input)
-            except ValueError:
-                print(f"  [!] Input tidak valid: '{user_input}', pakai default 1")
+    while True:
+        user_input = input("Mau bikin berapa akun? ").strip()
+        try:
+            count = int(user_input)
+            if count > 0:
+                break
+            print("  [!] Minimal 1 akun!")
+        except ValueError:
+            print("  [!] Masukkan angka yang valid!")
 
     print(f"\nMiMo CLI v{__version__}")
     print(f"Creating {count} account(s) | Referral: {referral} | Fast: {fast} | Parallel: {parallel}")
