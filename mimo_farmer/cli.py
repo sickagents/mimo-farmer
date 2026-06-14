@@ -114,12 +114,26 @@ def cmd_create(args) -> int:
     """Handle `mimo create` command."""
     from mimo_farmer.creator import create_account
 
-    count = args.count
     referral = args.referral
+    count = args.count
     fast = args.fast
     parallel = args.parallel
 
-    print(f"MiMo CLI v{__version__}")
+    # Interactive prompts when flags not provided
+    if referral == DEFAULT_REFERRAL_CODE:
+        user_input = input(f"Kode referral [{DEFAULT_REFERRAL_CODE}]: ").strip()
+        if user_input:
+            referral = user_input.upper()
+
+    if args.count == 1:
+        user_input = input("Mau bikin berapa akun? [1]: ").strip()
+        if user_input:
+            try:
+                count = int(user_input)
+            except ValueError:
+                print(f"  [!] Input tidak valid: '{user_input}', pakai default 1")
+
+    print(f"\nMiMo CLI v{__version__}")
     print(f"Creating {count} account(s) | Referral: {referral} | Fast: {fast} | Parallel: {parallel}")
     print()
 
