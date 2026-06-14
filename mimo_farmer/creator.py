@@ -359,6 +359,119 @@ async def clear_xiaomi_cookies(context) -> None:
     await asyncio.sleep(1)
 
 
+async def handle_identity_verification(page, user: str, domain: str, fast: bool = False) -> bool:
+    """Handle Xiaomi identity verification page (verifyEmail).
+
+    This page appears AFTER initial OTP for some accounts.
+    Shows 'Account Authentication' with 'Send' button to send verification code to email.
+
+    Steps:
+    1. Check if verifyEmail page is shown
+    2. Click 'Send' button
+    3. Wait for second verification code from temp email
+    4. Enter the code
+    5. Continue
+
+    Returns True if verification page was found and handled, False if not present.
+    """
+    await asyncio.sleep(2)
+
+    # Check if identity verification page is shown
+    url = page.url
+    body_text = ""
+    try:
+        body_text = await page.evaluate("document.body?.innerText || ''")
+    except Exception:
+        pass
+
+    is_verify_page = (
+        'verifyEmail' in url
+        or 'Account Authentication' in body_text
+        or 'verify your identity' in body_text.lower()
+    )
+
+    if not is_verify_page:
+        return False
+
+    print("  [verify] Identity verification page detected!")
+
+    # Click Send button
+    send_clicked = False
+    for btn_name in ['Send', 'Kirim']:
+        try:
+            btn = page.get_by_role('button', name=btn_name)
+            if await btn.count() > 0:
+                await btn.first.click(timeout=5000)
+                send_clicked = True
+                print(f"  [verify] '{btn_name}' clicked!")
+                break
+        except Exception:
+            continue
+
+    if not send_clicked:
+        # Fallback: look for orange/primary button
+        try:
+            btn = page.locator('button[type="submit"], .btn-primary, button:has-text("Send")')
+            if await btn.count() > 0:
+                await btn.first.click(timeout=5000)
+                send_clicked = True
+                print("  [verify] Send button clicked (fallback)!")
+        except Exception:
+            pass
+
+    if not send_clicked:
+        print("  [!] Could not find Send button on verification page")
+        return True  # Page was present but we couldn't handle it
+
+    # Wait for code input to appear
+    await asyncio.sleep(3)
+
+    # Get second verification code from temp email
+    print("  [verify] Waiting for verification code...")
+    from mimo_farmer.email_handler import wait_for_otp
+    code = await wait_for_otp(page, user, domain, timeout=120)
+
+    if not code:
+        print("  [!] Verification code not received!")
+        return True
+
+    print(f"  [verify] Got verification code: {code}")
+
+    # Enter verification code
+    try:
+        otp_inputs = page.locator(
+            'input[type="text"], input[type="number"], input[inputmode="numeric"]'
+        )
+        count = await otp_inputs.count()
+
+        if count >= 6:
+            for i, digit in enumerate(code[:6]):
+                await otp_inputs.nth(i).fill(digit)
+                await human_delay(50, 150, fast)
+        else:
+            await page.locator('input[type="text"]').first.fill(code)
+
+        await asyncio.sleep(1)
+
+        # Click Verify/Submit
+        for btn_name in ['Verify', 'Submit', 'Confirm', 'Next']:
+            try:
+                btn = page.get_by_role('button', name=btn_name)
+                if await btn.count() > 0:
+                    await btn.first.click(timeout=3000)
+                    print(f"  [verify] '{btn_name}' clicked!")
+                    break
+            except Exception:
+                continue
+
+        await asyncio.sleep(3)
+        print("  [verify] Identity verification completed!")
+    except Exception as e:
+        print(f"  [!] Verification entry error: {e}")
+
+    return True
+
+
 async def create_api_key(page, label: str, fast: bool = False) -> str | None:
     """Create and extract API key.
 
@@ -634,6 +747,15 @@ async def create_account(
         except Exception as e:
             print(f"  [!] OTP entry error: {e}")
         timer.phase("OTP entry")
+
+        # Phase 5.5: Identity verification (may appear for some accounts)
+        print("[6.5] Checking for identity verification...")
+        verify_handled = await handle_identity_verification(page, user, domain, fast)
+        if verify_handled:
+            print("  Identity verification handled!")
+            timer.phase("Identity verification")
+        else:
+            print("  No identity verification needed, continuing...")
 
         # Phase 6: Terms popup — CRITICAL
         # Try multiple times with delay — dialog may appear late
