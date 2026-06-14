@@ -165,6 +165,14 @@ def _run_sequential(count: int, referral: str, fast: bool) -> int:
                 account_num=i + 1,
             ))
             results.append(result)
+
+            # Risk control detected → stop batch, suggest new referral code
+            if result and result.get('risk_control'):
+                print(f"\n  [!] RISK CONTROL detected on account {i + 1}!")
+                print(f"  [!] Referral code '{referral}' is blocked or IP is flagged.")
+                print(f"  [!] Create a NEW referral code and try again.")
+                break
+
             if result is None:
                 print(f"\n  [!] Account {i + 1} failed — stopping batch.")
                 break
@@ -207,12 +215,20 @@ def _run_parallel(count: int, referral: str, fast: bool, parallel: int) -> int:
 
         try:
             batch_results = asyncio.run(run_batch(batch_size, account_counter - batch_size + 1))
+            risk_detected = False
             for r in batch_results:
                 if isinstance(r, Exception):
                     print(f"  [!] Error: {r}")
                     results.append(None)
                 else:
                     results.append(r)
+                    if r and r.get('risk_control'):
+                        risk_detected = True
+            if risk_detected:
+                print(f"\n  [!] RISK CONTROL detected in batch {batch_num}!")
+                print(f"  [!] Referral code '{referral}' is blocked or IP is flagged.")
+                print(f"  [!] Create a NEW referral code and try again.")
+                break
         except Exception as e:
             print(f"  [!] Batch error: {e}")
             results.extend([None] * batch_size)
@@ -251,10 +267,14 @@ def _save_combined(results: list, referral: str) -> None:
 
     lines = []
     for i, creds in enumerate(valid, 1):
+        api_key = creds.get('api_key', 'N/A')
+        # Validate: warn if key is masked
+        if api_key and ('*' in api_key or '...' in api_key):
+            print(f"  [!] Account {i}: API key is MASKED ({api_key[:15]}...) — re-run to get full key")
         lines.append(f"[{i}]")
         lines.append(f"Mail: {creds['email']}")
         lines.append(f"Pw: {creds['password']}")
-        lines.append(f"Api-Key: {creds.get('api_key', 'N/A')}")
+        lines.append(f"Api-Key: {api_key}")
         lines.append("")
 
     with open(combined_path, "w") as f:

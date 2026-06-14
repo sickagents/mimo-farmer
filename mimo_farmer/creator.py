@@ -686,25 +686,52 @@ async def create_api_key(page, label: str, fast: bool = False) -> str | None:
             # Prefer network-captured key (full, unmasked)
             api_key = captured_key
 
-            # Fallback: extract from input[disabled] value (masked)
+            # Check if network-captured key is masked (Xiaomi API returns **** asterisks)
+            if api_key and '*' in api_key:
+                print(f"  [!] Network response MASKED ({api_key[:15]}...). Trying clipboard...")
+                api_key = None
+
+            # Fallback: extract from input[disabled] value (may be masked with ...)
             if not api_key:
                 api_key = await page.evaluate(
                     "document.querySelector('input[disabled]')?.value || null"
                 )
-                if api_key and '...' in api_key:
-                    print(f"  [!] Input value is MASKED ({api_key}). Network capture failed.")
-                    # Try clipboard: click copy button if exists
-                    try:
-                        copy_btn = page.locator('button:has-text("Copy"), button[aria-label*="copy" i], [class*="copy" i]').first
-                        if await copy_btn.count() > 0:
-                            await copy_btn.click()
-                            await asyncio.sleep(0.5)
-                            clipboard = await page.evaluate("navigator.clipboard.readText()")
-                            if clipboard and clipboard.startswith('sk-') and len(clipboard) >= 40:
-                                api_key = clipboard
-                                print(f"  [CLIP] Got full key from clipboard ({len(clipboard)} chars)")
-                    except Exception:
-                        pass
+                if api_key and ('...' in api_key or '*' in api_key):
+                    print(f"  [!] Input value is MASKED ({api_key}). Trying clipboard...")
+                    api_key = None  # Will try clipboard below
+
+            # Clipboard fallback: click Copy button to get full unmasked key
+            if not api_key or (api_key and ('*' in api_key or '...' in api_key)):
+                try:
+                    copy_btn = page.locator('button:has-text("Copy"), button[aria-label*="copy" i], [class*="copy" i]').first
+                    if await copy_btn.count() > 0:
+                        await copy_btn.click()
+                        await asyncio.sleep(1)
+                        clipboard = await page.evaluate("navigator.clipboard.readText()")
+                        if clipboard and clipboard.startswith('sk-') and len(clipboard) >= 40 and '*' not in clipboard:
+                            api_key = clipboard
+                            print(f"  [CLIP] Got full key from clipboard ({len(clipboard)} chars)")
+                except Exception as e:
+                    print(f"  [!] Clipboard fallback failed: {e}")
+
+            # Final fallback: scan DOM for any visible full sk- key
+            if not api_key or (api_key and ('*' in api_key or '...' in api_key)):
+                try:
+                    dom_key = await page.evaluate("""
+                        () => {
+                            const all = document.querySelectorAll('code, pre, span, div, p, td');
+                            for (const el of all) {
+                                const t = el.textContent.trim();
+                                if (t.startsWith('sk-') && t.length >= 40 && !t.includes('*') && !t.includes('...')) return t;
+                            }
+                            return null;
+                        }
+                    """)
+                    if dom_key:
+                        api_key = dom_key
+                        print(f"  [DOM] Got full key from page element ({len(dom_key)} chars)")
+                except Exception:
+                    pass
 
             # Remove listener
             try:
