@@ -38,6 +38,55 @@ def normalize_captcha_text(text: str) -> str:
     return result.strip().replace('  ', ' ')
 
 
+async def detect_audio_challenge_available(bframe) -> bool:
+    """Check if audio challenge is available in the reCAPTCHA bframe.
+
+    Returns True if audio button exists and no blocking error detected.
+    Returns False if only image challenge is available (audio blocked).
+
+    Detection:
+    - Checks if #recaptcha-audio-button exists
+    - Checks for error messages about "automated" or "Try again later"
+      which indicate audio challenge is blocked
+    """
+    try:
+        # Check if audio button exists
+        audio_btn = bframe.locator('#recaptcha-audio-button')
+        audio_btn_exists = (await audio_btn.count()) > 0
+
+        if not audio_btn_exists:
+            print("  [captcha] No audio button found — image challenge only")
+            return False
+
+        # Check for blocking error messages
+        error_msg = await bframe.evaluate("""
+            (() => {
+                // Check for error message about automated access
+                const errMsgs = document.querySelectorAll(
+                    '.rc-doscaptcha-body-text, .rc-audiochallenge-error-message, .rc-doscaptcha-header-text'
+                );
+                for (const el of errMsgs) {
+                    const text = (el.textContent || '').toLowerCase();
+                    if (text.includes('automated') || text.includes('try again later')) {
+                        return text.trim();
+                    }
+                }
+                return '';
+            })()
+        """)
+
+        if error_msg:
+            print(f"  [captcha] Audio blocked: {error_msg}")
+            return False
+
+        print("  [captcha] Audio challenge available")
+        return True
+
+    except Exception as e:
+        print(f"  [captcha] Audio detection error: {e}")
+        return False
+
+
 async def solve_recaptcha(page, max_retries: int = CAPTCHA_MAX_RETRIES) -> bool:
     """Audio-based reCAPTCHA v2 solver.
 
@@ -45,11 +94,9 @@ async def solve_recaptcha(page, max_retries: int = CAPTCHA_MAX_RETRIES) -> bool:
     1. Find anchor frame (recaptcha anchor)
     2. Click checkbox — check auto-pass
     3. Find bframe challenge (CRITICAL: uses 'bframe' in frame.url)
-    4. Switch to audio challenge
-    5. Download audio from bframe context (CORS-safe)
-    6. ffmpeg convert MP3 → WAV
-    7. Google free SpeechRecognition STT
-    8. Type answer with human-like delays
+    4. Detect if audio challenge is available
+    5. If audio available: switch to audio challenge, solve via STT
+    6. If audio NOT available: pause for manual image solving
 
     Returns True if solved, False otherwise.
     """
@@ -96,7 +143,7 @@ async def solve_recaptcha(page, max_retries: int = CAPTCHA_MAX_RETRIES) -> bool:
         print("  [captcha] Frame detached (solved!)")
         return True
 
-    print("  [captcha] Challenge appeared, switching to audio...")
+    print("  [captcha] Challenge appeared, checking audio availability...")
 
     # Find challenge frame — CRITICAL: look for 'bframe' in frame.url
     bframe = None
@@ -108,6 +155,37 @@ async def solve_recaptcha(page, max_retries: int = CAPTCHA_MAX_RETRIES) -> bool:
         print("  [!] No challenge frame")
         return False
 
+    # Detect if audio challenge is available
+    audio_available = await detect_audio_challenge_available(bframe)
+
+    if not audio_available:
+        # Only image challenge available — need manual solving
+        print()
+        print("  " + "=" * 50)
+        print("  [captcha] AUDIO CHALLENGE NOT AVAILABLE")
+        print("  [captcha] Image challenge detected — requires manual solving.")
+        print("  [captcha] Please solve the CAPTCHA in the browser window.")
+        print("  [captcha] Press ENTER here when done...")
+        print("  " + "=" * 50)
+        print()
+        input()
+
+        # Check if solved after manual intervention
+        try:
+            checked = await anchor.evaluate(
+                "document.getElementById('recaptcha-anchor').getAttribute('aria-checked')"
+            )
+            if checked == 'true':
+                print("  [captcha] Solved manually!")
+                return True
+        except Exception:
+            print("  [captcha] Frame detached after manual solve (solved!)")
+            return True
+
+        print("  [!] Manual solve did not complete")
+        return False
+
+    # Audio challenge IS available — use automated solver
     await bframe.locator('#recaptcha-audio-button').click()
     await asyncio.sleep(1.5)
 

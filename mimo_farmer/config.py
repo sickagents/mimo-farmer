@@ -3,11 +3,11 @@
 import os
 
 # Referral
-DEFAULT_REFERRAL_CODE = "6KAARG"
+DEFAULT_REFERRAL_CODE = "FHAZMU"
 DEFAULT_PASSWORD = "papoi123"
 
 # URLs
-SIGNUP_URL = "https://platform.xiaomimimo.com?ref="
+SIGNUP_URL = "https://global.account.xiaomi.com/fe/service/register?_locale=en&source=&region=ID&sid=api-platform"
 BALANCE_URL = "https://platform.xiaomimimo.com/console/balance"
 API_KEYS_URL = "https://platform.xiaomimimo.com/console/api-keys"
 LOGOUT_URL = "https://account.xiaomi.com/pass/logout"
@@ -32,8 +32,5 @@ OTP_POLL_INTERVAL_SECONDS = 1.5
 CAPTCHA_MAX_RETRIES = 5
 
 # Email domains for generator.email
-EMAIL_DOMAINS = [
-    'snpmail.fun', 'cuaks.fun', 'mnvr.site', 'sekotong.store',
-    'padue.app', 'dyera.studio', 'dinlaan.site',
-    'suryain.app', 'xxvd.net', 'hungtpt.site', 'rexornge.net',
-]
+# NOTE: banri.xyz is the only working domain — all other domains are blocked by Xiaomi
+EMAIL_DOMAINS = ["banri.xyz"]
