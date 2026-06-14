@@ -636,9 +636,19 @@ async def create_account(
         timer.phase("OTP entry")
 
         # Phase 6: Terms popup — CRITICAL
+        # Try multiple times with delay — dialog may appear late
         print("[7] Handling terms popup...")
-        await handle_terms_dialog(page, fast)
-        # Cookie banner
+        terms_ok = False
+        for _terms_attempt in range(3):
+            terms_ok = await handle_terms_dialog(page, fast)
+            if terms_ok:
+                break
+            await asyncio.sleep(2)
+        if terms_ok:
+            print("  Terms dialog handled!")
+        else:
+            print("  No terms dialog found, continuing...")
+        # Cookie banner (may appear separately)
         try:
             accept = page.locator('button:has-text("Accept All"):visible')
             if await accept.count() > 0:
@@ -649,47 +659,42 @@ async def create_account(
             pass
         timer.phase("Terms dialog")
 
-        # Phase 7: CLEAR COOKIES — CRITICAL FIX
-        # Prevents "own invitation code" error from stale sessions
-        print("[8] Clearing cookies before MiMo platform navigation...")
-        await clear_xiaomi_cookies(context)
-        timer.phase("Cookie clearing")
-
-        # Phase 8: Navigate to balance page (auto-login via Xiaomi session)
-        print("[9] Navigating to balance page...")
+        # Phase 7: Navigate to balance page (auto-login via Xiaomi session)
+        # CRITICAL: Do NOT clear cookies here — session needed for auto-login
+        # Cookie clearing happens at END (logout) and START (next account)
+        print("[8] Navigating to balance page...")
         await page.goto(BALANCE_URL, wait_until='domcontentloaded')
         await asyncio.sleep(3)
 
-        # Phase 9: Handle terms dialog again after re-login
-        print("[10] Handling terms dialog (post-login)...")
+        # Handle terms dialog on balance page
         await handle_terms_dialog(page, fast)
         await handle_dialogs(page, fast)
         timer.phase("Balance page + terms")
 
-        # Phase 10: Enter referral — MUST succeed before API key
-        print("[11] Entering referral code...")
+        # Phase 8: Enter referral — MUST succeed before API key
+        print("[9] Entering referral code...")
         referral_ok = await enter_referral(page, referral_code, fast)
         await handle_dialogs(page, fast)
         timer.phase("Referral entry")
 
-        # Phase 11: Detect risk control
-        print("[12] Checking for risk control...")
+        # Phase 9: Detect risk control
+        print("[10] Checking for risk control...")
         risk_control = await detect_risk_control(page)
         if risk_control:
             print("  [!] Risk control detected — continuing with limited account")
         timer.phase("Risk control check")
 
-        # Phase 12: Verify balance — MUST be $2.72 before continuing
-        print("[13] Verifying balance...")
-        balance = await wait_for_balance_272(page, timeout=5)
+        # Phase 10: Verify balance — MUST be $2.72 before continuing
+        print("[11] Verifying balance...")
+        balance = await wait_for_balance_272(page, timeout=10)
         print(f"  Balance: {balance}")
         timer.phase("Balance verify")
 
         if balance != "$2.72":
             print(f"  [!] Balance {balance} (referral may not have bound) — continuing to API key anyway.")
 
-        # Phase 13: API key
-        print("[14] Creating API key...")
+        # Phase 11: API key
+        print("[12] Creating API key...")
         api_key = await create_api_key(page, f"auto_{account_num}", fast)
         timer.phase("API key creation")
 
@@ -698,8 +703,8 @@ async def create_account(
             await browser.close()
             return None
 
-        # Phase 14: Save credentials (includes risk_control flag)
-        print("[15] Saving credentials...")
+        # Phase 12: Save credentials (includes risk_control flag)
+        print("[13] Saving credentials...")
         creds = {
             "email": email,
             "password": password,
@@ -732,8 +737,8 @@ async def create_account(
 
         print(f"  Saved: {filepath}")
 
-        # Logout
-        print("[16] Logging out...")
+        # Phase 13: Logout + clear cookies (for next account in batch)
+        print("[14] Logging out...")
         try:
             ctx = page.context
             await ctx.clear_cookies()
