@@ -427,10 +427,15 @@ async def handle_identity_verification(page, user: str, domain: str, fast: bool 
     await asyncio.sleep(3)
 
     # Get second verification code from temp email (skip first OTP code)
+    # If no NEW code arrives in 30s, fall back to first code (Xiaomi sometimes reuses it)
     print("  [verify] Waiting for verification code...")
     from mimo_farmer.email_handler import wait_for_otp
     skip = [first_otp] if first_otp else []
-    code = await wait_for_otp(page, user, domain, timeout=120, skip_codes=skip)
+    code = await wait_for_otp(page, user, domain, timeout=30, skip_codes=skip)
+
+    if not code and first_otp:
+        print(f"  [verify] No new code found, trying first OTP: {first_otp}")
+        code = first_otp
 
     if not code:
         print("  [!] Verification code not received!")
