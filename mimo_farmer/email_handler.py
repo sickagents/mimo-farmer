@@ -29,15 +29,18 @@ async def _extract_codes_from_page(email_page) -> list[str]:
 
 
 async def _click_email_and_get_code(email_page, skip_codes: set, inbox_url: str) -> str | None:
-    """Click on ALL Xiaomi email rows to read body, return new code if found.
+    """Click on Xiaomi email rows to read body, return new code if found.
 
-    generator.email inbox shows subjects but NOT email bodies.
-    Must click each row to open and read the 6-digit code from body.
-    Checks ALL Xiaomi emails (signup OTP + identity verification) — returns first NEW code.
+    generator.email shows email body INLINE when row is clicked (not navigation).
+    Multiple click strategies: row, subject cell, JS click, link inside row.
     """
     try:
+        # First get a snapshot of current page text to compare later
+        before_text = await email_page.evaluate("document.body?.innerText || ''")
+
         rows = email_page.locator('table tr')
         count = await rows.count()
+        print(f"  [otp] Found {count} table rows")
 
         for i in range(count):
             row = rows.nth(i)
@@ -50,37 +53,62 @@ async def _click_email_and_get_code(email_page, skip_codes: set, inbox_url: str)
             if 'From' in row_text and 'Subject' in row_text:
                 continue
 
-            # Only click rows from Xiaomi
+            # Only process rows from Xiaomi
             if 'xiaomi' not in row_text.lower():
                 continue
 
-            print(f"  [otp] Clicking email: {row_text.strip()[:60]}...")
-            try:
-                await row.click(timeout=3000)
-                await asyncio.sleep(2)
+            print(f"  [otp] Row {i}: {row_text.strip()[:80]}")
 
-                # Read body content for codes
-                body_codes = await _extract_codes_from_page(email_page)
-                new_codes = [c for c in body_codes if not c.startswith('20') and c not in skip_codes]
-                if new_codes:
-                    return new_codes[0]
-
-                print(f"  [otp] No new codes in this email, going back...")
-
-                # Go back to inbox
-                back_btn = email_page.locator('a:has-text("Back"), a:has-text("Inbox"), a:has-text("←")')
-                if await back_btn.count() > 0:
-                    await back_btn.first.click(timeout=3000)
-                else:
-                    await email_page.goto(inbox_url, wait_until='domcontentloaded')
-                await asyncio.sleep(2)
-            except Exception as e:
-                print(f"  [otp] Click email error: {e}")
+            # Strategy 1: click the row directly
+            # Strategy 2: click subject cell (2nd td)
+            # Strategy 3: JS click on row
+            # Strategy 4: click any link/a tag inside row
+            clicked = False
+            for strategy_name, click_fn in [
+                ("row.click", lambda: row.click(timeout=3000)),
+                ("subject td", lambda: row.locator('td').nth(1).click(timeout=3000)),
+                ("JS click", email_page.evaluate(f"""
+                    () => {{
+                        const rows = document.querySelectorAll('table tr');
+                        if (rows[{i}]) rows[{i}].click();
+                    }}
+                """)),
+                ("link in row", lambda: row.locator('a, td:nth-child(2)').first.click(timeout=3000)),
+            ]:
                 try:
-                    await email_page.goto(inbox_url, wait_until='domcontentloaded')
+                    await click_fn()
                     await asyncio.sleep(2)
-                except Exception:
-                    pass
+                    clicked = True
+
+                    # Check if page content changed
+                    after_text = await email_page.evaluate("document.body?.innerText || ''")
+                    if after_text != before_text:
+                        print(f"  [otp] Page changed after {strategy_name}!")
+
+                    # Extract codes from page
+                    body_codes = await _extract_codes_from_page(email_page)
+                    print(f"  [otp] Found codes on page: {body_codes}")
+
+                    new_codes = [c for c in body_codes if not c.startswith('20') and c not in skip_codes]
+                    if new_codes:
+                        return new_codes[0]
+
+                    print(f"  [otp] No new codes via {strategy_name}")
+                except Exception as e:
+                    print(f"  [otp] Strategy '{strategy_name}' failed: {str(e)[:60]}")
+                    continue
+
+            # After trying all strategies for this row, go back to inbox
+            try:
+                current_url = email_page.url
+                if current_url != inbox_url:
+                    await email_page.goto(inbox_url, wait_until='domcontentloaded')
+                else:
+                    await email_page.reload(wait_until='domcontentloaded')
+                await asyncio.sleep(2)
+                before_text = await email_page.evaluate("document.body?.innerText || ''")
+            except Exception:
+                pass
 
     except Exception as e:
         print(f"  [otp] Email click scan error: {e}")
