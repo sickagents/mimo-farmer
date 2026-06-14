@@ -32,15 +32,12 @@ async def _click_email_and_get_code(email_page, skip_codes: set, inbox_url: str)
     """Click on Xiaomi email rows to read body, return new code if found.
 
     generator.email shows email body INLINE when row is clicked (not navigation).
-    Multiple click strategies: row, subject cell, JS click, link inside row.
+    Uses JavaScript to click each row and extract codes from expanded body.
     """
     try:
-        # First get a snapshot of current page text to compare later
-        before_text = await email_page.evaluate("document.body?.innerText || ''")
-
         rows = email_page.locator('table tr')
         count = await rows.count()
-        print(f"  [otp] Found {count} table rows")
+        print(f"  [otp] Found {count} table rows in inbox")
 
         for i in range(count):
             row = rows.nth(i)
@@ -57,58 +54,56 @@ async def _click_email_and_get_code(email_page, skip_codes: set, inbox_url: str)
             if 'xiaomi' not in row_text.lower():
                 continue
 
-            print(f"  [otp] Row {i}: {row_text.strip()[:80]}")
+            subject = row_text.strip()[:80]
+            print(f"  [otp] Clicking row {i}: {subject}")
 
-            # Strategy 1: click the row directly
-            # Strategy 2: click subject cell (2nd td)
-            # Strategy 3: JS click on row
-            # Strategy 4: click any link/a tag inside row
+            # Try clicking the row via multiple methods
             clicked = False
-            for strategy_name, click_fn in [
-                ("row.click", lambda: row.click(timeout=3000)),
-                ("subject td", lambda: row.locator('td').nth(1).click(timeout=3000)),
-                ("JS click", email_page.evaluate(f"""
-                    () => {{
-                        const rows = document.querySelectorAll('table tr');
-                        if (rows[{i}]) rows[{i}].click();
-                    }}
-                """)),
-                ("link in row", lambda: row.locator('a, td:nth-child(2)').first.click(timeout=3000)),
+            for method_name, method_fn in [
+                ("row.click", lambda r=row: r.click(timeout=3000)),
+                ("td click", lambda r=row: r.locator('td').nth(1).click(timeout=3000)),
+                ("JS click", lambda idx=i: email_page.evaluate(f"document.querySelectorAll('table tr')[{idx}]?.click()")),
             ]:
                 try:
-                    await click_fn()
-                    await asyncio.sleep(2)
+                    await method_fn()
                     clicked = True
-
-                    # Check if page content changed
-                    after_text = await email_page.evaluate("document.body?.innerText || ''")
-                    if after_text != before_text:
-                        print(f"  [otp] Page changed after {strategy_name}!")
-
-                    # Extract codes from page
-                    body_codes = await _extract_codes_from_page(email_page)
-                    print(f"  [otp] Found codes on page: {body_codes}")
-
-                    new_codes = [c for c in body_codes if not c.startswith('20') and c not in skip_codes]
-                    if new_codes:
-                        return new_codes[0]
-
-                    print(f"  [otp] No new codes via {strategy_name}")
+                    print(f"  [otp] Clicked via {method_name}")
+                    break
                 except Exception as e:
-                    print(f"  [otp] Strategy '{strategy_name}' failed: {str(e)[:60]}")
+                    print(f"  [otp] {method_name} failed: {str(e)[:50]}")
                     continue
 
-            # After trying all strategies for this row, go back to inbox
+            if not clicked:
+                print(f"  [otp] All click methods failed for row {i}")
+                continue
+
+            # Wait for email body to expand/load
+            await asyncio.sleep(3)
+
+            # Extract codes from current page (body should now be visible)
+            body_text = await email_page.evaluate("document.body?.innerText || ''")
+            all_codes = re.findall(r'\b(\d{6})\b', body_text)
+            print(f"  [otp] Codes found on page: {all_codes}")
+
+            # Filter: not year prefix, not in skip list
+            new_codes = [c for c in all_codes if not c.startswith('20') and c not in skip_codes]
+            if new_codes:
+                print(f"  [otp] New code found: {new_codes[0]}")
+                return new_codes[0]
+
+            print(f"  [otp] No new codes in this email (all in skip or none found)")
+
+            # Reload inbox for next iteration
             try:
-                current_url = email_page.url
-                if current_url != inbox_url:
-                    await email_page.goto(inbox_url, wait_until='domcontentloaded')
-                else:
-                    await email_page.reload(wait_until='domcontentloaded')
+                await email_page.reload(wait_until='domcontentloaded')
                 await asyncio.sleep(2)
-                before_text = await email_page.evaluate("document.body?.innerText || ''")
             except Exception:
-                pass
+                await email_page.goto(inbox_url, wait_until='domcontentloaded')
+                await asyncio.sleep(2)
+
+            # Re-get rows after reload (DOM may have changed)
+            rows = email_page.locator('table tr')
+            count = await rows.count()
 
     except Exception as e:
         print(f"  [otp] Email click scan error: {e}")
@@ -155,10 +150,10 @@ async def wait_for_otp(page, user: str, domain: str, timeout: int = OTP_TIMEOUT_
             # Step 2: Click email rows to read bodies
             # Trigger when: (a) all codes in skip list, OR (b) no codes visible on page
             should_click = False
-            if codes and skip_codes and check_count >= 2:
+            if codes and skip_codes and check_count >= 1:
                 print(f"  [otp] All codes in skip list, clicking email rows...")
                 should_click = True
-            elif not codes and check_count >= 2:
+            elif not codes and check_count >= 1:
                 print(f"  [otp] No codes visible on inbox, clicking email rows...")
                 should_click = True
 

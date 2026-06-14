@@ -436,7 +436,7 @@ async def handle_identity_verification(page, user: str, domain: str, fast: bool 
     Shows 'Account Authentication' with 'Send' button to send verification code to email.
 
     Steps:
-    1. Check if verifyEmail page is shown
+    1. Wait up to 15s for verifyEmail page to appear (retry loop)
     2. Click 'Send' button
     3. Wait for second verification code from temp email
     4. Enter the code
@@ -444,26 +444,36 @@ async def handle_identity_verification(page, user: str, domain: str, fast: bool 
 
     Returns True if verification page was found and handled, False if not present.
     """
-    await asyncio.sleep(2)
+    # Retry detection for up to 15 seconds — page may load slowly
+    is_verify_page = False
+    for detect_attempt in range(6):
+        await asyncio.sleep(2.5)
+        url = page.url
+        body_text = ""
+        try:
+            body_text = await page.evaluate("document.body?.innerText || ''")
+        except Exception:
+            pass
 
-    # Check if identity verification page is shown
-    url = page.url
-    body_text = ""
-    try:
-        body_text = await page.evaluate("document.body?.innerText || ''")
-    except Exception:
-        pass
+        is_verify_page = (
+            'verifyEmail' in url
+            or 'Account Authentication' in body_text
+            or 'verify your identity' in body_text.lower()
+            or 'identity/verify' in url
+        )
 
-    is_verify_page = (
-        'verifyEmail' in url
-        or 'Account Authentication' in body_text
-        or 'verify your identity' in body_text.lower()
-    )
+        if is_verify_page:
+            break
+
+        if detect_attempt < 5:
+            print(f"  [verify] Not detected yet (attempt {detect_attempt + 1}/6), waiting...")
 
     if not is_verify_page:
+        print("  [verify] No identity verification page after 15s")
         return False
 
     print("  [verify] Identity verification page detected!")
+    print(f"  [verify] URL: {page.url[:100]}")
 
     # Click Send button
     send_clicked = False
