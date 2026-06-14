@@ -574,7 +574,8 @@ async def handle_identity_verification(page, user: str, domain: str, fast: bool 
 async def create_api_key(page, label: str, fast: bool = False) -> str | None:
     """Create and extract API key.
 
-    CRITICAL: Extracts from input[disabled] value.
+    Strategy: intercept network response for full key (input[disabled] shows masked).
+    Fallback: extract from input[disabled] value (masked but functional).
     """
     print("  Creating API key...")
     await page.goto(API_KEYS_URL, wait_until='domcontentloaded')
@@ -637,6 +638,38 @@ async def create_api_key(page, label: str, fast: bool = False) -> str | None:
 
             await asyncio.sleep(0.5)
 
+            # CRITICAL: Set up network intercept BEFORE clicking Confirm
+            # The full API key is in the POST response, not in the masked input
+            captured_key = None
+            async def capture_api_key_response(response):
+                nonlocal captured_key
+                try:
+                    if response.status == 200 and ('api-key' in response.url.lower() or 'apikey' in response.url.lower()):
+                        body = await response.json()
+                        # Deep search for sk- key in response
+                        def find_key(obj):
+                            if isinstance(obj, str) and obj.startswith('sk-') and len(obj) >= 40:
+                                return obj
+                            if isinstance(obj, dict):
+                                for v in obj.values():
+                                    r = find_key(v)
+                                    if r:
+                                        return r
+                            if isinstance(obj, list):
+                                for v in obj:
+                                    r = find_key(v)
+                                    if r:
+                                        return r
+                            return None
+                        found = find_key(body)
+                        if found:
+                            captured_key = found
+                            print(f"  [NET] Captured full key from response ({len(found)} chars)")
+                except Exception:
+                    pass
+
+            page.on('response', capture_api_key_response)
+
             # Confirm
             await page.get_by_role('button', name='Confirm').click(timeout=5000)
 
@@ -646,15 +679,41 @@ async def create_api_key(page, label: str, fast: bool = False) -> str | None:
                     state='visible', timeout=8000
                 )
             except Exception:
-                await asyncio.sleep(2)
+                await asyncio.sleep(3)
 
-            # CRITICAL: Extract from input[disabled] value
-            api_key = await page.evaluate(
-                "document.querySelector('input[disabled]')?.value || null"
-            )
+            # Prefer network-captured key (full, unmasked)
+            api_key = captured_key
 
-            if api_key:
+            # Fallback: extract from input[disabled] value (masked)
+            if not api_key:
+                api_key = await page.evaluate(
+                    "document.querySelector('input[disabled]')?.value || null"
+                )
+                if api_key and '...' in api_key:
+                    print(f"  [!] Input value is MASKED ({api_key}). Network capture failed.")
+                    # Try clipboard: click copy button if exists
+                    try:
+                        copy_btn = page.locator('button:has-text("Copy"), button[aria-label*="copy" i], [class*="copy" i]').first
+                        if await copy_btn.count() > 0:
+                            await copy_btn.click()
+                            await asyncio.sleep(0.5)
+                            clipboard = await page.evaluate("navigator.clipboard.readText()")
+                            if clipboard and clipboard.startswith('sk-') and len(clipboard) >= 40:
+                                api_key = clipboard
+                                print(f"  [CLIP] Got full key from clipboard ({len(clipboard)} chars)")
+                    except Exception:
+                        pass
+
+            # Remove listener
+            try:
+                page.remove_listener('response', capture_api_key_response)
+            except Exception:
+                pass
+
+            if api_key and len(api_key) >= 40:
                 print(f"  API Key: {api_key[:10]}...{api_key[-5:]}")
+            elif api_key:
+                print(f"  API Key (short/masked): {api_key}")
             else:
                 print("  [!] Could not extract API key")
             return api_key
