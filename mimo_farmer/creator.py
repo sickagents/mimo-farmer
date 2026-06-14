@@ -193,17 +193,68 @@ async def handle_terms_dialog(page, fast: bool = False):
         print("  [!] Could not click checkbox")
         return False
 
-    # Step 3: Click Confirm button — try multiple selectors
-    await asyncio.sleep(1)  # Wait for button to enable after checkbox
+    # Step 3: Click Confirm button — wait for it to appear after checkbox
     confirm_clicked = False
+
+    # Wait up to 5s for any element containing "Confirm" to appear
+    for confirm_wait in range(5):
+        try:
+            body = await page.evaluate("document.body?.innerText || ''")
+            if 'Confirm' in body:
+                print(f"  'Confirm' text found on page (wait {confirm_wait}s)")
+                break
+        except Exception:
+            pass
+        await asyncio.sleep(1)
+
+    # Strategy A: JS click — find element with "Confirm" text and click it
+    try:
+        js_result = await page.evaluate('''() => {
+            // Find all elements with "Confirm" text
+            const walker = document.createTreeWalker(
+                document.body, NodeFilter.SHOW_TEXT, null, false
+            );
+            const results = [];
+            while (walker.nextNode()) {
+                if (walker.currentNode.textContent.trim() === 'Confirm') {
+                    const el = walker.currentNode.parentElement;
+                    if (el && el.offsetParent !== null) {
+                        results.push({
+                            tag: el.tagName,
+                            cls: el.className?.substring(0, 50),
+                            text: el.textContent.trim(),
+                            rect: el.getBoundingClientRect()
+                        });
+                        el.click();
+                        return {clicked: true, tag: el.tagName, cls: el.className?.substring(0, 50)};
+                    }
+                }
+            }
+            // Try partial match
+            const all = document.querySelectorAll('button, div, span, a, [role=button]');
+            for (const el of all) {
+                if (el.textContent.trim() === 'Confirm' && el.offsetParent !== null) {
+                    el.click();
+                    return {clicked: true, tag: el.tagName, cls: el.className?.substring(0, 50)};
+                }
+            }
+            return {clicked: false, found: results.length};
+        }''')
+        if js_result and js_result.get('clicked'):
+            print(f"  Confirm clicked via JS! (tag={js_result.get('tag')}, cls={js_result.get('cls')})")
+            await asyncio.sleep(2)
+            return True
+        else:
+            print(f"  JS click result: {js_result}")
+    except Exception as e:
+        print(f"  JS click error: {e}")
+
+    # Strategy B: Playwright selectors
     for btn_sel in [
         'button:has-text("Confirm"):visible',
-        'button:has-text("confirm"):visible',
         'div:has-text("Confirm"):visible',
         'span:has-text("Confirm"):visible',
-        'a:has-text("Confirm"):visible',
-        '[class*="confirm" i]:visible',
-        '[class*="ok" i]:visible',
+        'text=Confirm',
     ]:
         try:
             btn = page.locator(btn_sel)
@@ -211,58 +262,53 @@ async def handle_terms_dialog(page, fast: bool = False):
             if cnt > 0:
                 await btn.first.click(force=True)
                 await asyncio.sleep(2)
-                confirm_clicked = True
                 print(f"  Confirm clicked! (selector: {btn_sel})")
                 return True
         except Exception:
             continue
 
-    # Fallback: get_by_role and get_by_text
-    for name in ['Confirm', 'confirm', 'OK', 'Agree']:
-        try:
-            btn = page.get_by_role('button', name=name)
-            if await btn.count() > 0:
-                await btn.first.click(force=True)
-                await asyncio.sleep(2)
-                confirm_clicked = True
-                print(f"  Confirm clicked via get_by_role({name})!")
-                return True
-        except Exception:
-            continue
-        try:
-            btn = page.get_by_text(name, exact=True)
-            if await btn.count() > 0:
-                await btn.first.click(force=True)
-                await asyncio.sleep(2)
-                confirm_clicked = True
-                print(f"  Confirm clicked via get_by_text({name})!")
-                return True
-        except Exception:
-            continue
-
-    # Last resort: click second button in the modal (Cancel=first, Confirm=second)
+    # Strategy C: get_by_text
     try:
-        modal_buttons = page.locator('[class*="modal"]:visible button:visible, [class*="dialog"]:visible button:visible')
-        if await modal_buttons.count() >= 2:
-            await modal_buttons.nth(1).click(force=True)
+        btn = page.get_by_text('Confirm', exact=True)
+        if await btn.count() > 0:
+            await btn.first.click(force=True)
             await asyncio.sleep(2)
-            print("  Confirm clicked via second modal button!")
+            print("  Confirm clicked via get_by_text!")
             return True
     except Exception:
         pass
 
-    # Debug: dump all visible text near "Confirm"
+    # Strategy D: click second visible button in any dialog/modal
     try:
-        body = await page.evaluate("document.body?.innerText || ''")
-        if 'Confirm' in body:
-            idx = body.index('Confirm')
-            print(f"  [DEBUG] 'Confirm' found in page text at pos {idx}: ...{body[max(0,idx-20):idx+30]}...")
-        else:
-            print("  [DEBUG] 'Confirm' NOT found anywhere in page text")
+        all_btns = page.locator('button:visible')
+        btn_count = await all_btns.count()
+        print(f"  [DEBUG] Total visible buttons: {btn_count}")
+        for bi in range(btn_count):
+            try:
+                btn_text = await all_btns.nth(bi).inner_text()
+                print(f"  [DEBUG] Button {bi}: '{btn_text.strip()[:30]}'")
+            except Exception:
+                pass
     except Exception:
         pass
 
-    print("  [!] Checkbox clicked but Confirm button not found")
+    # Strategy E: click by coordinates if we know position
+    try:
+        modal = page.locator('[class*="modal"]:visible, [role="dialog"]:visible').first
+        if await modal.count() > 0:
+            box = await modal.bounding_box()
+            if box:
+                # Confirm is typically bottom-right of modal
+                click_x = box['x'] + box['width'] - 60
+                click_y = box['y'] + box['height'] - 30
+                await page.mouse.click(click_x, click_y)
+                await asyncio.sleep(2)
+                print(f"  Confirm clicked via coordinates ({click_x}, {click_y})!")
+                return True
+    except Exception:
+        pass
+
+    print("  [!] Could not click Confirm button")
     return False
 
 
@@ -851,14 +897,15 @@ async def create_account(
             print("  No identity verification needed, continuing...")
 
         # Phase 6: Terms popup — CRITICAL
-        # Try multiple times with delay — dialog may appear late
+        # Wait for page to fully load before checking for terms
         print("[7] Handling terms popup...")
+        await asyncio.sleep(5)  # Wait for modal to fully render
         terms_ok = False
         for _terms_attempt in range(3):
             terms_ok = await handle_terms_dialog(page, fast)
             if terms_ok:
                 break
-            await asyncio.sleep(2)
+            await asyncio.sleep(3)
         if terms_ok:
             print("  Terms dialog handled!")
         else:
