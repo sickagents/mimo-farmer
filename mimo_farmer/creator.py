@@ -169,73 +169,77 @@ async def handle_terms_dialog(page, fast: bool = False):
         print("  No terms popup found after waiting")
         return False
 
-    # Step 2: Click checkbox — use JS for reliability
-    await asyncio.sleep(1)  # Settle time after detection
+    # Step 2: Click Ant Design checkbox — click the WRAPPER, not hidden input
+    # Ant Design .ant-checkbox-input has opacity:0 — clicking it doesn't trigger React state.
+    # Must click span.ant-checkbox or label.ant-checkbox-wrapper to trigger Ant Design handler.
+    await asyncio.sleep(1)
     checkbox_checked = False
 
-    # Strategy A: JS click checkbox and verify it's checked
-    try:
-        js_result = await page.evaluate('''() => {
-            // Find checkbox inputs
-            const checkboxes = document.querySelectorAll('input[type="checkbox"]');
-            for (const cb of checkboxes) {
-                if (cb.offsetParent !== null) {  // visible
-                    cb.checked = true;
-                    cb.dispatchEvent(new Event('change', {bubbles: true}));
-                    cb.dispatchEvent(new Event('input', {bubbles: true}));
-                    return {checked: cb.checked, tag: cb.tagName, id: cb.id};
-                }
-            }
-            // Try role=checkbox
-            const roleCbs = document.querySelectorAll('[role="checkbox"]');
-            for (const cb of roleCbs) {
-                if (cb.offsetParent !== null) {
-                    cb.click();
-                    return {checked: true, tag: cb.tagName, cls: cb.className?.substring(0, 30)};
-                }
-            }
-            // Try label click (some UIs toggle via label)
-            const labels = document.querySelectorAll('label');
-            for (const lb of labels) {
-                if (lb.innerText.includes('agree') && lb.offsetParent !== null) {
-                    lb.click();
-                    return {checked: true, tag: 'LABEL', text: lb.innerText.substring(0, 40)};
-                }
-            }
-            return {checked: false};
-        }''')
-        if js_result and js_result.get('checked'):
-            checkbox_checked = True
-            print(f"  Checkbox checked via JS! ({js_result})")
-            await asyncio.sleep(1)
-    except Exception as e:
-        print(f"  JS checkbox error: {e}")
+    # Strategy A: Click Ant Design checkbox wrapper (triggers React state update)
+    for cb_target in [
+        'span.ant-checkbox',                    # Ant Design checkbox wrapper
+        'label.ant-checkbox-wrapper',            # Ant Design label wrapper
+        '.ant-modal .ant-checkbox-inner',        # Visible checkbox square
+        '.ant-modal label:has(input[type="checkbox"])',  # Any label with checkbox
+    ]:
+        try:
+            el = page.locator(cb_target)
+            if await el.count() > 0:
+                await el.first.click()
+                await asyncio.sleep(1)
+                # Verify: check if Confirm button is no longer disabled
+                confirm_disabled = await page.locator('.ant-modal-footer button:last-child').first.is_disabled()
+                if not confirm_disabled:
+                    checkbox_checked = True
+                    print(f"  Checkbox checked via {cb_target}! Confirm enabled!")
+                    break
+                else:
+                    print(f"  Clicked {cb_target} but Confirm still disabled, trying next...")
+        except Exception as e:
+            print(f"  {cb_target} failed: {str(e)[:40]}")
+            continue
 
-    # Strategy B: Playwright click (fallback)
+    # Strategy B: JS click on Ant Design checkbox wrapper (dispatch React-compatible event)
     if not checkbox_checked:
-        for cb_sel in [
-            'input[type="checkbox"]:visible',
-            '[role="checkbox"]:visible',
-            '.ant-checkbox-input',
-        ]:
-            try:
-                cb = page.locator(cb_sel)
-                if await cb.count() > 0:
-                    await cb.first.check(force=True)
-                    await asyncio.sleep(1)
-                    is_checked = await cb.first.is_checked()
-                    print(f"  Checkbox clicked via Playwright, checked={is_checked}")
-                    checkbox_checked = True
-                    break
-            except Exception:
-                try:
-                    await cb.first.click(force=True)
-                    await asyncio.sleep(1)
-                    checkbox_checked = True
-                    print(f"  Checkbox clicked via Playwright (fallback click)")
-                    break
-                except Exception:
-                    continue
+        try:
+            js_result = await page.evaluate('''() => {
+                const modal = document.querySelector('.ant-modal');
+                if (!modal) return {error: 'no modal'};
+                const cbWrapper = modal.querySelector('.ant-checkbox');
+                if (!cbWrapper) return {error: 'no checkbox wrapper'};
+                cbWrapper.click();
+                // Check result
+                const btn = modal.querySelector('.ant-modal-footer button:last-child');
+                return {
+                    clicked: true,
+                    confirmDisabled: btn ? btn.disabled : 'no btn',
+                    checkboxChecked: modal.querySelector('.ant-checkbox-input')?.checked
+                };
+            }''')
+            print(f"  JS checkbox result: {js_result}")
+            if js_result and not js_result.get('confirmDisabled'):
+                checkbox_checked = True
+                print("  Checkbox checked via JS wrapper click!")
+            await asyncio.sleep(1)
+        except Exception as e:
+            print(f"  JS checkbox error: {e}")
+
+    # Strategy C: force remove disabled attribute (last resort)
+    if not checkbox_checked:
+        try:
+            await page.evaluate('''() => {
+                const btn = document.querySelector('.ant-modal-footer button:last-child');
+                if (btn) {
+                    btn.disabled = false;
+                    btn.removeAttribute('disabled');
+                    btn.classList.remove('cursor-not-allowed');
+                    btn.style.cursor = 'pointer';
+                }
+            }''')
+            print("  Force-removed disabled attribute from Confirm")
+            checkbox_checked = True
+        except Exception:
+            pass
 
     if not checkbox_checked:
         print("  [!] Could not check checkbox")
