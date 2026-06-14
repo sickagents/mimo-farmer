@@ -140,123 +140,74 @@ async def handle_dialogs(page, fast: bool = False):
 
 
 async def handle_terms_dialog(page, fast: bool = False):
-    """Handle Terms modal — works for ant-modal AND custom Xiaomi modals.
+    """Handle Terms modal — WAIT for it to appear, then click.
 
-    Known patterns:
-    - .ant-modal:has-text('Terms') → checkbox → Confirm
-    - [role='dialog']:has-text('Terms') → checkbox → Confirm
-    - Custom Xiaomi modal: white box with 'Terms & Agreements' title,
-      checkbox, Cancel/Confirm buttons
-    - Broad fallback: any visible checkbox + Confirm button near 'Terms'
+    Key fix: don't try to click before popup is actually visible.
+    Uses Playwright wait_for_selector with timeout to detect popup.
     """
-    for attempt in range(5):
-        handled = False
-
-        # Strategy 1: ant-modal with Terms
+    # Step 1: Wait for Terms popup to actually appear (up to 10s)
+    terms_appeared = False
+    for wait_attempt in range(3):
         try:
-            modal = page.locator('.ant-modal:has-text("Terms")')
-            if await modal.count() > 0:
-                print(f"  Found ant-modal Terms (attempt {attempt + 1})")
-                cb = modal.locator('input[type="checkbox"]')
-                if await cb.count() > 0:
-                    await cb.first.click(force=True)
-                    await asyncio.sleep(0.8)
-                    print("  Checkbox clicked!")
-                confirm = modal.locator('button:has-text("Confirm")')
-                if await confirm.count() > 0:
-                    await confirm.first.click(force=True)
-                    await asyncio.sleep(1.5)
-                    print("  Confirm clicked!")
-                    return True
-                handled = True
+            # Wait for a checkbox to be visible (the Terms checkbox)
+            await page.wait_for_selector(
+                'input[type="checkbox"]:visible, [role="checkbox"]:visible',
+                timeout=4000,
+                state='visible'
+            )
+            # Verify it's near "Terms" text
+            body = await page.evaluate("document.body?.innerText || ''")
+            if 'Terms' in body or 'Agreement' in body or 'agree' in body.lower():
+                terms_appeared = True
+                print(f"  Terms popup detected (attempt {wait_attempt + 1})")
+                break
         except Exception:
-            pass
+            # Maybe checkbox loaded but text not yet — wait and retry
+            await asyncio.sleep(2)
 
-        # Strategy 2: role=dialog with Terms
-        if not handled:
-            try:
-                modal = page.locator('[role="dialog"]:has-text("Terms")')
-                if await modal.count() > 0:
-                    print(f"  Found role=dialog Terms (attempt {attempt + 1})")
-                    cb = modal.locator('input[type="checkbox"], [role="checkbox"]')
-                    if await cb.count() > 0:
-                        await cb.first.click(force=True)
-                        await asyncio.sleep(0.8)
-                        print("  Checkbox clicked!")
-                    confirm = modal.locator('button:has-text("Confirm")')
-                    if await confirm.count() > 0:
-                        await confirm.first.click(force=True)
-                        await asyncio.sleep(1.5)
-                        print("  Confirm clicked!")
-                        return True
-                    handled = True
-            except Exception:
-                pass
+    if not terms_appeared:
+        print("  No terms popup found after waiting")
+        return False
 
-        # Strategy 3: Xiaomi custom modal — look for checkbox + Confirm near Terms text
-        if not handled:
-            try:
-                # Find checkbox that's visible (likely in the terms modal)
-                checkboxes = page.locator('input[type="checkbox"]:visible, [role="checkbox"]:visible')
-                cb_count = await checkboxes.count()
-
-                for ci in range(cb_count):
-                    cb = checkboxes.nth(ci)
-                    # Check if this checkbox is near "Terms" or "Agreement" text
-                    try:
-                        parent = cb.locator('xpath=ancestor::div[contains(text(),"Terms") or contains(text(),"Agreement") or contains(text(),"agree")]')
-                        if await parent.count() > 0:
-                            await cb.click(force=True)
-                            await asyncio.sleep(0.8)
-                            print(f"  Terms checkbox clicked (strategy 3, attempt {attempt + 1})")
-                            # Find Confirm button nearby
-                            for btn_text in ['Confirm', 'Agree', 'Accept', 'OK']:
-                                btn = page.get_by_role('button', name=btn_text)
-                                if await btn.count() > 0:
-                                    await btn.first.click(force=True)
-                                    await asyncio.sleep(1.5)
-                                    print(f"  '{btn_text}' clicked!")
-                                    return True
-                            handled = True
-                            break
-                    except Exception:
-                        continue
-            except Exception:
-                pass
-
-        # Strategy 4: broad fallback — any visible checkbox + Confirm button
+    # Step 2: Click checkbox
+    await asyncio.sleep(0.5)  # Small settle time
+    checkbox_clicked = False
+    for cb_sel in [
+        '.ant-modal input[type="checkbox"]',
+        '[role="dialog"] input[type="checkbox"]',
+        'input[type="checkbox"]:visible',
+        '[role="checkbox"]:visible',
+    ]:
         try:
-            cb = page.locator('input[type="checkbox"]:visible, [role="checkbox"]:visible')
+            cb = page.locator(cb_sel)
             if await cb.count() > 0:
                 await cb.first.click(force=True)
                 await asyncio.sleep(0.8)
-                btn = page.locator('button:has-text("Confirm"):visible')
-                if await btn.count() > 0:
-                    await btn.first.click(force=True)
-                    await asyncio.sleep(1.5)
-                    print(f"  Fallback: checkbox + Confirm clicked! (attempt {attempt + 1})")
-                    return True
+                checkbox_clicked = True
+                print("  Checkbox clicked!")
+                break
         except Exception:
-            pass
+            continue
 
-        # Strategy 5: click "I agree" label text
+    if not checkbox_clicked:
+        print("  [!] Could not click checkbox")
+        return False
+
+    # Step 3: Click Confirm button (wait for it to be ready)
+    for btn_text in ['Confirm', 'Agree', 'Accept', 'OK']:
         try:
-            agree_label = page.locator('text=/I agree/i').first
-            if await agree_label.count() > 0:
-                await agree_label.click(force=True)
-                await asyncio.sleep(0.8)
-                btn = page.locator('button:has-text("Confirm"):visible')
-                if await btn.count() > 0:
-                    await btn.first.click(force=True)
-                    await asyncio.sleep(1.5)
-                    print(f"  'I agree' label + Confirm clicked! (attempt {attempt + 1})")
-                    return True
+            btn = page.locator(f'button:has-text("{btn_text}"):visible')
+            if await btn.count() > 0:
+                # Wait a beat for button to become interactive
+                await asyncio.sleep(0.5)
+                await btn.first.click(force=True)
+                await asyncio.sleep(2)
+                print(f"  '{btn_text}' clicked!")
+                return True
         except Exception:
-            pass
+            continue
 
-        await asyncio.sleep(1.5)
-
-    print("  No terms dialog found, continuing...")
+    print("  [!] Checkbox clicked but Confirm button not found")
     return False
 
 
