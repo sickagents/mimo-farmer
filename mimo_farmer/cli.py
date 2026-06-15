@@ -15,6 +15,7 @@ import argparse
 import asyncio
 import json
 import os
+import random
 import sys
 import time
 
@@ -177,10 +178,17 @@ def cmd_create(args) -> int:
 
 def _run_sequential(count: int, referral: str, fast: bool) -> int:
     """Create accounts one at a time."""
+    import time as _time
     from mimo_farmer.creator import create_account
 
     results = []
     for i in range(count):
+        # Random cooldown between accounts (anti-detection)
+        if i > 0:
+            cooldown = random.randint(30, 60)
+            print(f"\n  ⏳ Cooldown {cooldown}s between accounts (anti-detection)...")
+            _time.sleep(cooldown)
+
         if count > 1:
             print(f"\n{'#' * 60}")
             print(f"  Account {i + 1}/{count}")
@@ -251,6 +259,12 @@ def _run_continuous(referral: str, fast: bool) -> int:
 
     try:
         while True:
+            # Random cooldown between accounts (anti-detection)
+            if account_num > 0:
+                cooldown = random.randint(30, 60)
+                print(f"\n  ⏳ Cooldown {cooldown}s between accounts (anti-detection)...")
+                time.sleep(cooldown)
+
             account_num += 1
             print(f"\n{'#' * 60}")
             print(f"  Account #{account_num}")

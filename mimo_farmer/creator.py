@@ -35,6 +35,10 @@ from mimo_farmer.config import (
 )
 from mimo_farmer.captcha import solve_recaptcha, solve_text_captcha, detect_xiaomi_captcha
 from mimo_farmer.email_handler import random_email, wait_for_otp, get_available_domains
+from mimo_farmer.anti_detect import (
+    random_fingerprint, apply_stealth, clear_device_cookies,
+    human_typing_delay, USER_AGENTS,
+)
 
 
 class Timer:
@@ -811,15 +815,31 @@ async def create_account(
     print()
 
     async with async_playwright() as p:
+        # Generate random fingerprint for this session
+        fp = random_fingerprint()
+        print(f"  [stealth] UA: {fp['user_agent'][:60]}...")
+        print(f"  [stealth] Viewport: {fp['viewport']['width']}x{fp['viewport']['height']}")
+        print(f"  [stealth] Timezone: {fp['timezone']}")
+
         browser = await p.chromium.launch(
             headless=False,
-            args=['--disable-blink-features=AutomationControlled']
+            args=[
+                '--disable-blink-features=AutomationControlled',
+                '--disable-features=IsolateOrigins,site-per-process',
+                '--no-first-run',
+                '--no-default-browser-check',
+            ]
         )
         context = await browser.new_context(
-            viewport={'width': 1280, 'height': 800},
-            locale='en-US',
+            viewport=fp['viewport'],
+            locale=fp['locale'],
+            user_agent=fp['user_agent'],
+            timezone_id=fp['timezone'],
         )
         page = await context.new_page()
+
+        # Apply anti-detection stealth JS
+        await apply_stealth(context, page)
 
         # Phase 1: Navigate directly to signup page (no tab click needed)
         print("[1] Navigating to signup...")
@@ -1181,10 +1201,11 @@ async def create_account(
 
         print(f"  Saved: {filepath}")
 
-        # Phase 13: Logout + clear cookies (for next account in batch)
+        # Phase 13: Logout + clear all traces (for next account in batch)
         print("[14] Logging out...")
         try:
             ctx = page.context
+            await clear_device_cookies(ctx)
             await ctx.clear_cookies()
             await page.goto(LOGOUT_URL)
             await asyncio.sleep(2)
