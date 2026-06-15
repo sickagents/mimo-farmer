@@ -33,7 +33,7 @@ from mimo_farmer.config import (
     HUMAN_DELAY_MIN_MS, HUMAN_DELAY_MAX_MS,
     FAST_DELAY_MIN_MS, FAST_DELAY_MAX_MS, FAST_MODE_MULTIPLIER,
 )
-from mimo_farmer.captcha import solve_recaptcha
+from mimo_farmer.captcha import solve_recaptcha, solve_text_captcha, detect_xiaomi_captcha
 from mimo_farmer.email_handler import random_email, wait_for_otp
 
 
@@ -871,8 +871,8 @@ async def create_account(
             return None
         timer.phase("Fill form")
 
-        # Phase 3: Submit + reCAPTCHA (with audio detection fallback)
-        print("[3] Clicking Next + solving reCAPTCHA...")
+        # Phase 3: Submit + CAPTCHA (dual detection: reCAPTCHA OR Xiaomi text)
+        print("[3] Clicking Next + solving CAPTCHA...")
         try:
             await page.get_by_role('button', name='Next').click(timeout=5000)
         except Exception:
@@ -884,12 +884,61 @@ async def create_account(
         # Wait for page transition after Next click
         await asyncio.sleep(3)
 
-        captcha_ok = await solve_recaptcha(page)
-        if not captcha_ok:
-            print("[X] reCAPTCHA failed!")
-            await browser.close()
-            return None
-        timer.phase("reCAPTCHA solve")
+        # DETECT which type of CAPTCHA appeared
+        captcha_ok = False
+
+        # Check 1: Xiaomi text CAPTCHA popup
+        is_xiaomi_captcha = await detect_xiaomi_captcha(page)
+        if is_xiaomi_captcha:
+            print("  [!] Xiaomi text CAPTCHA detected (not reCAPTCHA)")
+            captcha_ok = await solve_text_captcha(page)
+            if not captcha_ok:
+                print("[X] Xiaomi text CAPTCHA failed!")
+                await browser.close()
+                return None
+        else:
+            # Check 2: reCAPTCHA anchor frame (original flow)
+            has_recaptcha = False
+            for frame in page.frames:
+                if 'anchor' in frame.url and 'recaptcha' in frame.url:
+                    has_recaptcha = True
+                    break
+
+            if has_recaptcha:
+                print("  [!] reCAPTCHA detected")
+                captcha_ok = await solve_recaptcha(page)
+                if not captcha_ok:
+                    print("[X] reCAPTCHA failed!")
+                    await browser.close()
+                    return None
+            else:
+                # Neither detected yet — wait a bit more and re-check
+                # (popup might be loading slowly)
+                await asyncio.sleep(3)
+                is_xiaomi_captcha = await detect_xiaomi_captcha(page)
+                if is_xiaomi_captcha:
+                    print("  [!] Xiaomi text CAPTCHA detected (delayed)")
+                    captcha_ok = await solve_text_captcha(page)
+                else:
+                    # Check reCAPTCHA again after delay
+                    for frame in page.frames:
+                        if 'anchor' in frame.url and 'recaptcha' in frame.url:
+                            has_recaptcha = True
+                            break
+                    if has_recaptcha:
+                        print("  [!] reCAPTCHA detected (delayed)")
+                        captcha_ok = await solve_recaptcha(page)
+                    else:
+                        # No CAPTCHA appeared — maybe auto-passed or page changed
+                        print("  [?] No CAPTCHA detected — checking if page progressed...")
+                        captcha_ok = True  # Assume OK, let next steps validate
+
+                if not captcha_ok:
+                    print("[X] CAPTCHA solving failed!")
+                    await browser.close()
+                    return None
+
+        timer.phase("CAPTCHA solve")
 
         # Phase 4: OTP
         print("[4] Waiting for OTP page...")

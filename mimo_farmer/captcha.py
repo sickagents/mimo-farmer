@@ -1,7 +1,17 @@
-"""reCAPTCHA v2 Audio Solver — uses free Google SpeechRecognition.
+"""CAPTCHA Solvers — supports both reCAPTCHA v2 audio AND Xiaomi text CAPTCHA.
 
-CRITICAL: Audio downloaded from bframe context (NOT main page — CORS blocks).
-CRITICAL: Frame detection uses 'bframe' in frame.url (handles enterprise/bframe).
+DETECTION LOGIC (called from creator.py):
+  1. Check if reCAPTCHA anchor frame appeared → solve_recaptcha()
+  2. Check if Xiaomi text CAPTCHA popup appeared → solve_text_captcha()
+  3. Neither → manual fallback
+
+reCAPTCHA solver:
+  CRITICAL: Audio downloaded from bframe context (NOT main page — CORS blocks).
+  CRITICAL: Frame detection uses 'bframe' in frame.url (handles enterprise/bframe).
+
+Xiaomi text CAPTCHA solver:
+  Uses ddddocr for OCR of distorted text images.
+  Popup detection: "Enter verification code" + captcha image near input.
 """
 
 import asyncio
@@ -14,6 +24,144 @@ import time
 import speech_recognition as sr
 
 from mimo_farmer.config import AUDIO_DIR, CAPTCHA_MAX_RETRIES
+
+
+async def detect_xiaomi_captcha(page) -> bool:
+    """Check if Xiaomi's custom text CAPTCHA popup is visible.
+
+    Detection signals:
+    - Text "Enter verification code" or "verification code" on page
+    - A captcha image element near the code input
+    - A Submit button in the popup
+    """
+    try:
+        body = await page.evaluate("document.body?.innerText || ''")
+        body_lower = body.lower()
+        if 'verification code' in body_lower or 'enter code' in body_lower:
+            # Verify it's the popup with captcha, not the OTP page
+            # Check for captcha image presence
+            has_captcha_img = await page.evaluate("""
+                (() => {
+                    // Look for captcha image near verification popup
+                    const imgs = document.querySelectorAll('img');
+                    for (const img of imgs) {
+                        const src = img.src || '';
+                        const w = img.naturalWidth || img.width;
+                        // CAPTCHA images are typically small (< 300px wide)
+                        // and may be base64 or a captcha endpoint URL
+                        if (w > 20 && w < 400 && w > 0) return true;
+                        if (src.includes('captcha') || src.includes('verify')) return true;
+                    }
+                    // Check canvas elements (some CAPTCHAs use canvas)
+                    const canvases = document.querySelectorAll('canvas');
+                    for (const c of canvases) {
+                        if (c.width > 20 && c.width < 400) return true;
+                    }
+                    return false;
+                })()
+            """)
+            if has_captcha_img:
+                return True
+
+            # Fallback: check for "Submit" button + code input in a dialog-like container
+            has_submit = await page.evaluate("""
+                (() => {
+                    const btns = document.querySelectorAll('button');
+                    for (const b of btns) {
+                        if (b.textContent.trim().toLowerCase() === 'submit') return true;
+                    }
+                    return false;
+                })()
+            """)
+            has_code_input = await page.evaluate("""
+                (() => {
+                    const inputs = document.querySelectorAll('input[type="text"], input[type="number"], input:not([type])');
+                    for (const inp of inputs) {
+                        const ph = (inp.placeholder || '').toLowerCase();
+                        if (ph.includes('code') || ph.includes('captcha')) return true;
+                    }
+                    return false;
+                })()
+            """)
+            if has_submit and has_code_input:
+                return True
+    except Exception:
+        pass
+    return False
+
+
+
+
+async def solve_text_captcha(page, max_retries: int = 3) -> bool:
+    """Solve Xiaomi's custom text CAPTCHA — MANUAL mode.
+
+    Instead of auto-OCR (ddddocr), we:
+    1. Tell user to solve it manually in the browser
+    2. Poll until popup disappears OR user presses Enter
+
+    Returns True if solved, False otherwise.
+    """
+    print()
+    print("  " + "=" * 50)
+    print("  [captcha] XIAOMI TEXT CAPTCHA DETECTED")
+    print("  [captcha] Please solve the CAPTCHA in the browser window.")
+    print("  [captcha] Type the code & click Submit yourself.")
+    print("  [captcha]")
+    print("  [captcha] Waiting for popup to close automatically...")
+    print("  [captcha] (or press ENTER here to confirm you're done)")
+    print("  " + "=" * 50)
+    print()
+
+    # Poll: check every 2s if popup disappeared, timeout after 120s
+    POLL_INTERVAL = 2
+    MAX_WAIT = 120
+    IS_WINDOWS = __import__('sys').platform == 'win32'
+
+    elapsed = 0
+    while elapsed < MAX_WAIT:
+        # Check if popup gone
+        still_there = await detect_xiaomi_captcha(page)
+        if not still_there:
+            print("  [captcha] Popup closed — CAPTCHA solved!")
+            return True
+
+        # Non-blocking stdin check
+        if IS_WINDOWS:
+            import msvcrt
+            if msvcrt.kbhit():
+                msvcrt.getch()  # consume the keypress
+                # Re-check popup after user says done
+                await asyncio.sleep(1)
+                still_there = await detect_xiaomi_captcha(page)
+                if not still_there:
+                    print("  [captcha] Popup closed — CAPTCHA solved!")
+                    return True
+                else:
+                    print("  [captcha] Popup still visible. Continue solving...")
+        else:
+            # Unix: non-blocking stdin read
+            try:
+                ready, _, _ = select.select([sys.stdin], [], [], 0)
+                if ready:
+                    sys.stdin.readline()
+                    await asyncio.sleep(1)
+                    still_there = await detect_xiaomi_captcha(page)
+                    if not still_there:
+                        print("  [captcha] Popup closed — CAPTCHA solved!")
+                        return True
+                    else:
+                        print("  [captcha] Popup still visible. Continue solving...")
+            except Exception:
+                pass
+
+        await asyncio.sleep(POLL_INTERVAL)
+        elapsed += POLL_INTERVAL
+        # Progress indicator every 10s
+        if elapsed % 10 == 0:
+            print(f"  [captcha] Still waiting... ({elapsed}s / {MAX_WAIT}s)")
+
+    print("  [captcha] Timeout waiting for manual solve")
+    return False
 
 
 # Word-to-digit normalization map

@@ -80,7 +80,7 @@ async def _click_email_and_get_code(email_page, skip_codes: set, inbox_url: str)
                 print(f"  [otp] No new codes in this email")
 
                 # Go back to inbox
-                await email_page.goto(inbox_url, wait_until='domcontentloaded')
+                await email_page.goto(inbox_url, wait_until='domcontentloaded', timeout=60000)
                 await asyncio.sleep(2)
 
                 # Re-get items after navigation
@@ -89,7 +89,7 @@ async def _click_email_and_get_code(email_page, skip_codes: set, inbox_url: str)
             except Exception as e:
                 print(f"  [otp] Click error: {str(e)[:60]}")
                 try:
-                    await email_page.goto(inbox_url, wait_until='domcontentloaded')
+                    await email_page.goto(inbox_url, wait_until='domcontentloaded', timeout=60000)
                     await asyncio.sleep(2)
                 except Exception:
                     pass
@@ -112,7 +112,7 @@ async def wait_for_otp(page, user: str, domain: str, timeout: int = OTP_TIMEOUT_
 
     email_page = await page.context.new_page()
     inbox_url = f"https://generator.email/{user}@{domain}"
-    await email_page.goto(inbox_url, wait_until='domcontentloaded')
+    await email_page.goto(inbox_url, wait_until='domcontentloaded', timeout=60000)
     await asyncio.sleep(4)
 
     start = time.time()
@@ -161,7 +161,7 @@ async def wait_for_otp(page, user: str, domain: str, timeout: int = OTP_TIMEOUT_
 
         # Refresh inbox
         try:
-            await email_page.reload(wait_until='domcontentloaded')
+            await email_page.reload(wait_until='domcontentloaded', timeout=60000)
             await asyncio.sleep(OTP_POLL_INTERVAL_SECONDS)
         except Exception:
             try:
