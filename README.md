@@ -4,62 +4,71 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.10+-3776AB.svg?style=for-the-badge&logo=python&logoColor=white" alt="Python">
-  <img src="https://img.shields.io/badge/version-2.0.0-00ff88.svg?style=for-the-badge" alt="Version">
+  <img src="https://img.shields.io/badge/version-2.1.0-00ff88.svg?style=for-the-badge" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-green.svg?style=for-the-badge" alt="License">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg?style=for-the-badge" alt="Platform">
 </p>
 
 <p align="center">
-  <b>Automated Xiaomi MiMo account creation with referral bonuses, reCAPTCHA v2 audio bypass, and API key extraction.</b><br>
-  <sub>~160 seconds per account | $2.72 referral bonus | 100% automated pipeline</sub>
+  <b>Automated Xiaomi MiMo account creation with referral bonuses, anti-detect browser, and API key extraction.</b><br>
+  <sub>Siklus mode (1 main + 5 children) | reCAPTCHA audio bypass | Manual Xiaomi CAPTCHA | Batch output</sub>
 </p>
 
 ---
-
-## Demo
-
-<p align="center">
-  <img src="docs/demo.png" alt="mimo-farmer demo" width="100%">
-</p>
 
 ## Features
 
 | Feature | Description |
 |---------|-------------|
-| 🎙 **reCAPTCHA v2 Audio Solver** | Free Google SpeechRecognition STT — no paid API needed |
+| 🔄 **Siklus Mode** | Auto-create 1 main + 5 children per cycle — 6 accounts, each child uses own referral |
+| 🎙 **reCAPTCHA v2 Audio Solver** | Free Google STT — no paid API needed |
+| 🖊 **Manual Xiaomi CAPTCHA** | Text CAPTCHA shown to user for manual solve (more reliable than OCR) |
 | 📧 **Auto OTP** | generator.email integration with auto-polling and body code extraction |
 | 🔐 **Identity Verification** | Handles Xiaomi's double-OTP verification automatically |
-| 📋 **Terms Dialog** | Handles React/Ant Design checkbox + Confirm via trusted click events |
+| 📋 **Terms Dialog** | React/Ant Design checkbox fix via trusted click events |
 | 🎁 **Referral Codes** | Automatic referral code binding via UI flow |
 | 🛡 **Risk Control Detection** | Detects flagged accounts, stops batch, suggests new referral code |
 | 💰 **Balance Verification** | Confirms $2.72 referral bonus before proceeding |
 | 🔑 **API Key Extraction** | Network intercept + clipboard fallback for full unmasked keys |
-| 🔀 **Random Passwords** | Unique password per account (anti-bot detection) |
+| 🕵️ **Anti-Detection** | UA/viewport/timezone spoofing, webdriver override, WebGL spoof, human typing |
+| 📦 **Batch Output** | Single `batch_*.txt` file with all `[N] Mail/Pw/Api-Key` — no per-account files |
 | ⚡ **Fast Mode** | Reduced delays for quicker creation |
 | 🔄 **Parallel Mode** | Multiple browser instances simultaneously |
-| 📦 **Batch Output** | Combined `[N] Mail/Pw/Api-Key` format for easy copy |
+| ♾️ **Continuous Mode** | Keep creating until risk control detected |
+| 🔄 **IP Rotation** | Prompted every 4 accounts in continuous/siklus mode |
 
 ## Pipeline
 
-<p align="center">
-  <img src="docs/pipeline.png" alt="mimo-farmer pipeline" width="100%">
-</p>
+1. **Anti-Detect Setup** — Stealth browser with spoofed UA, viewport, timezone, WebGL, webdriver override
+2. **Navigate** — Opens Xiaomi signup page via Patchright
+3. **Fill Form** — Random email (generator.email) + random password
+4. **CAPTCHA Handling**:
+   - **reCAPTCHA v2** → Automated audio solver (Google STT, ~90% accuracy)
+   - **Xiaomi text CAPTCHA** → Manual solve (user types code in browser)
+5. **OTP** — Polls generator.email inbox for 6-digit verification code
+6. **Identity Verification** — Handles Xiaomi's second OTP (Send → wait → enter code)
+7. **Terms Dialog** — Trusted checkbox click + Confirm
+8. **Cookie Clear** — Prevents "own invitation code" error from stale sessions
+9. **Balance Page** — Navigates to MiMo platform (auto-login via Xiaomi session)
+10. **Referral** — Enters referral code via UI input fields
+11. **Risk Control** — Detects if account is flagged; stops batch if detected
+12. **Balance Verify** — Confirms $2.72 via regex extraction
+13. **API Key** — Creates key, captures full 51-char key via network intercept (fallback: clipboard)
+14. **Save** — Credentials saved to single batch file in `accounts/`
 
-### Step-by-step
+### Siklus Mode Flow
 
-1. **Navigate** — Opens Xiaomi signup page via Patchright (anti-detect Playwright)
-2. **Fill Form** — Random email (banri.xyz) + random password (12 chars)
-3. **reCAPTCHA v2** — Clicks checkbox, detects audio challenge, downloads MP3 from bframe context, converts via ffmpeg, transcribes via Google free STT
-4. **OTP** — Polls generator.email inbox for 6-digit verification code
-5. **Identity Verification** — Handles Xiaomi's second OTP (Send → wait → enter code)
-6. **Terms Dialog** — Clicks `input[type="checkbox"]` (trusted event that React recognizes) + Confirm
-7. **Cookie Clear** — Prevents "own invitation code" error from stale sessions
-8. **Balance Page** — Navigates to MiMo platform (auto-login via Xiaomi session)
-9. **Referral** — Enters referral code via UI input fields
-10. **Risk Control** — Detects if account is flagged; stops batch if detected
-11. **Balance Verify** — Confirms $2.72 via regex extraction
-12. **API Key** — Creates key, captures full 51-char key via network intercept (fallback: clipboard)
-13. **Save** — Credentials saved as `.txt` and `.json` in `accounts/`
+```
+Siklus 1:
+  ├─ Main account (no referral) → own_referral = XJ6YSS
+  ├─ Child 1 (referral: XJ6YSS) → $2.72 balance
+  ├─ Child 2 (referral: XJ6YSS) → $2.72 balance
+  ├─ Child 3 (referral: XJ6YSS) → $2.72 balance
+  ├─ Child 4 (referral: XJ6YSS) → $2.72 balance
+  └─ Child 5 (referral: XJ6YSS) → $2.72 balance
+
+Total: 6 accounts, $14.32 combined balance
+```
 
 ## Installation
 
@@ -91,30 +100,44 @@ python -m patchright install chromium
 
 ## Usage
 
-### Interactive Mode
+### Siklus Mode (Recommended)
 
 ```bash
-mimo create
-# Prompts for referral code and account count
+# 1 siklus = 1 main + 5 children = 6 accounts
+mimo create --siklus
+
+# Multiple siklus
+# (interactive prompt asks how many)
+
+# Fast mode
+mimo create --siklus --fast
 ```
 
-### Command-Line Mode
+### Single Account
 
 ```bash
-# Single account
 mimo create --referral ABC123 --count 1
+```
 
-# Multiple accounts
+### Multiple Accounts
+
+```bash
 mimo create --referral ABC123 --count 5
+mimo create --referral ABC123 --count 5 --fast
+```
 
-# Fast mode (reduced delays)
-mimo create --referral ABC123 --count 3 --fast
+### Parallel Mode
 
-# Parallel browser instances
+```bash
 mimo create --referral ABC123 --count 10 --parallel 3
+```
 
-# All options combined
-mimo create --referral ABC123 --count 10 --parallel 3 --fast
+### Continuous Mode
+
+```bash
+# Keep creating until risk control detected
+mimo create --referral ABC123 --continuous
+mimo create --referral ABC123 -c --fast
 ```
 
 ### Account Management
@@ -135,16 +158,26 @@ mimo export --output my_accounts.json
 
 ### Output Format
 
+Single batch file in `accounts/batch_YYYYMMDD_HHMMSS.txt`:
+
 ```
+[MAIN]
+Mail: 4cniy0m9q8@rexornge.net
+Pw: MmaTUm11MU!9
+Api-Key: sk-s2nnxo2l...sg58
+Referral: -
+Own-Referral: XJ6YSS
+Balance: $0.72
+
 [1]
-Mail: abc123@banri.xyz
-Pw: MmRai9ILb2!9
-Api-Key: sk-s47bzoi...a2avasrip8 (51 chars)
+Mail: h7vb2k4@rexornge.net
+Pw: MmKp3Xnq7!9
+Api-Key: sk-t98abcd...xyz12345
+Referral: XJ6YSS
+Balance: $2.72
 
 [2]
-Mail: def456@banri.xyz
-Pw: MmKp3Xnq7!9
-Api-Key: sk-t98abcd...xyz12345 (51 chars)
+...
 ```
 
 > **Note:** API keys are only saved to local files — they are never transmitted anywhere.
@@ -156,22 +189,28 @@ Api-Key: sk-t98abcd...xyz12345 (51 chars)
 | Setting | Default | Description |
 |---------|---------|-------------|
 | Referral Code | `FHAZMU` | Default referral code |
-| Email Domain | `banri.xyz` | Only working domain (Xiaomi blocks others) |
-| Password | Random 12 chars | `Mm` + 8 random + `!9` (anti-bot) |
+| Password | `papoi123` | Default password (overridable) |
+| Email Domains | 15+ domains | Auto-scraped from generator.email (fallback: `banri.xyz`) |
 | Browser | Patchright | Anti-detect Playwright (Chromium) |
+| OTP Timeout | 180s | Max wait for verification email |
+| CAPTCHA | Manual (Xiaomi), Auto (reCAPTCHA) | Text CAPTCHA → user solves; reCAPTCHA → audio STT |
 
-### Working Referral Codes
+### Anti-Detection Features
 
-Referral codes may expire after heavy use. If you get "risk control" errors, create a new code:
+| Feature | Implementation |
+|---------|---------------|
+| User Agent | Real Chrome UA from pool |
+| Viewport | Randomized common resolutions |
+| Timezone | Auto-detected from locale |
+| Webdriver | `navigator.webdriver = false` |
+| WebGL | Spoofed vendor + renderer |
+| Chrome Runtime | `window.chrome` + runtime inject |
+| Typing Speed | Random delays between keystrokes (150-600ms) |
+| Mouse Movement | Human-like randomized paths |
 
-```bash
-# Check if code is working
-mimo create --referral YOURCODE --count 1
-```
+### Working Email Domains
 
-### Email Domains
-
-Xiaomi blocks most temporary email domains. Currently only `banri.xyz` (via generator.email) works reliably. Other domains may work intermittently.
+The tool auto-scrapes available domains from generator.email. If a domain gets "not safe" error from Xiaomi, it automatically retries with a new domain/email. This loop continues until a working domain is found.
 
 ## Architecture
 
@@ -180,20 +219,24 @@ mimo-farmer/
 ├── mimo_farmer/
 │   ├── __init__.py       # Package version
 │   ├── __main__.py       # Entry point (python -m mimo_farmer)
-│   ├── cli.py            # Argparse CLI (create, accounts, export)
-│   ├── creator.py        # Core 14-step account creation pipeline
-│   ├── captcha.py        # reCAPTCHA v2 audio solver + fallback
+│   ├── cli.py            # Argparse CLI — siklus, continuous, parallel, sequential
+│   ├── creator.py        # Core pipeline: signup, CAPTCHA, OTP, referral, API key
+│   ├── captcha.py        # reCAPTCHA v2 audio solver + Xiaomi text CAPTCHA detection
 │   ├── email_handler.py  # generator.email OTP polling
-│   └── config.py         # Default settings + constants
+│   ├── config.py         # Default settings + constants
+│   └── anti_detect.py    # Stealth browser config (UA, viewport, WebGL, etc.)
+├── accounts/             # Batch output files (gitignored)
 ├── docs/
-│   ├── banner.png        # Project banner
-│   ├── demo.png          # Terminal demo screenshot
-│   └── pipeline.png      # Pipeline diagram
-├── accounts/             # Generated credentials (gitignored)
+│   ├── DOCUMENTATION.md  # Full technical documentation
+│   ├── banner_chatgpt.png
+│   ├── demo.png
+│   └── pipeline.png
+├── CHANGELOG.md
 ├── README.md
 ├── LICENSE               # MIT License
 ├── requirements.txt
-└── setup.py
+├── setup.py
+└── run.bat               # Windows quick-run script
 ```
 
 ### Key Technical Decisions
@@ -201,71 +244,56 @@ mimo-farmer/
 | Decision | Why |
 |----------|-----|
 | **Patchright** over Playwright | Anti-detect fingerprint avoids bot detection |
-| **Audio challenge** over image | Free Google STT > paid captcha services |
+| **Manual Xiaomi CAPTCHA** | ddddocr accuracy ~50%, manual is faster than wasted retries |
+| **reCAPTCHA audio** over image | Free Google STT > paid captcha services |
 | **Network intercept** for API keys | `input[disabled].value` returns masked key |
 | **`input[type="checkbox"]`** click | Trusted event that React recognizes (label click doesn't work) |
 | **Cookie clearing** between phases | Prevents "own invitation code" from stale sessions |
-| **Random 12-char passwords** | Xiaomi max 16 chars; longer passwords silently rejected |
+| **Unlimited email retry** | Some domains get "not safe", keep retrying until accepted |
+| **Batch-only output** | Single file per run, no per-account file clutter |
 
 ## Troubleshooting
 
+### Xiaomi text CAPTCHA appears
+
+This is normal. The tool will pause and wait for you to manually type the verification code in the browser window. After solving, the tool automatically continues.
+
 ### reCAPTCHA not loading
 
-If reCAPTCHA iframe doesn't appear after clicking Next:
-
-1. **Password too long** — Xiaomi max 16 chars. Password is auto-generated at 12 chars, but if you override with `--password`, keep it ≤16.
+1. **Password too long** — Xiaomi max 16 chars. Keep password ≤16.
 2. **IP flagged** — Wait 30-60 minutes or switch IP (VPN/mobile hotspot).
-3. **Patchright detected** — Rare, but can happen. Try again later.
+3. **Patchright detected** — Rare. Try again later.
 
 ### "Risk control restrictions" error
 
-Xiaomi flags accounts after multiple signups from same IP. Solutions:
+Xiaomi flags accounts after multiple signups from same IP.
 
 1. **Create new referral code** — Old codes get flagged
 2. **Switch IP** — Mobile hotspot or residential VPN
 3. **Wait** — IP cooldown takes 1-2 hours
+4. **Use `--siklus`** — Built-in cooldown between cycles
+
+### Email "not safe" error
+
+Xiaomi rejects certain temp email domains. The tool automatically retries with a new email/domain. If it keeps failing:
+1. generator.email may be rate-limited — wait 10-15 minutes
+2. Switch IP
+3. Check if generator.email is accessible
 
 ### API key shows masked (asterisks)
 
-This means the Xiaomi API returned a masked key in the network response. The tool automatically falls back to clipboard copy button. If both fail, the key will show as masked in the output file — re-run to get a fresh key.
+The tool automatically falls back to clipboard copy button. If both fail, re-run to get a fresh key.
 
 ### Identity verification timeout
 
-Xiaomi requires a second OTP for identity verification. The tool waits up to 180 seconds. If it times out:
-
+Xiaomi requires a second OTP. The tool waits up to 180 seconds. If timeout:
 1. Check if generator.email is accessible
-2. The email domain may be rate-limited — wait 10-15 minutes
-3. Try a different email domain if available
-
-### Terms dialog checkbox not working
-
-The Terms dialog uses React/Ant Design. The tool clicks the actual `<input type="checkbox">` element (trusted event) instead of the label. If Confirm stays disabled:
-
-1. The dialog may not have fully rendered — the tool retries automatically
-2. If persistent, Xiaomi may have changed the dialog structure
+2. Email domain may be rate-limited — wait 10-15 minutes
+3. Switch IP
 
 ## Changelog
 
-### v2.0.1 (2026-06-15)
-- **Random passwords** — Each account gets unique 12-char password (anti-bot detection)
-- **API key fix** — Detects masked keys from API response, falls back to clipboard + DOM scan
-- **Risk control batch stop** — Stops remaining accounts when risk control detected
-- **Password length fix** — 12 chars (was 18, exceeded Xiaomi's 16-char max)
-- **Verify button fix** — force=True click + JS fallback for reCAPTCHA verify
-- **CLI args fix** — `--referral` and `--count` properly override interactive prompts
-- **Faster terms dialog** — Reduced sleep times, 6s vs 70-99s previously
-- **Debug output** — Frame URL logging when reCAPTCHA not found
-
-### v2.0.0 (2026-06-14)
-- Audio challenge detection with manual fallback
-- Risk control detection
-- Cookie clearing fix
-- Terms dialog handling at every page navigation
-- Network intercept for API key capture
-- Combined batch output format
-
-### v1.0.0 (2026-06-13)
-- Initial release
+See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
 ## Legal Disclaimer
 
