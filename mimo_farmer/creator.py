@@ -1435,7 +1435,6 @@ async def create_account(
         print(f"  Balance: {balance}")
         print(f"  API Key: {'OK' if api_key else 'MISSING'}")
         print(f"  Risk Control: {risk_control}")
-        print(f"  File: {filepath}")
         print(timer.summary())
         print("=" * 60)
 
