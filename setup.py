@@ -13,10 +13,12 @@ setup(
     packages=find_packages(),
     python_requires=">=3.10",
     install_requires=[
-        "patchright",
-        "SpeechRecognition",
-        "pydub",
-    ],
+            "patchright",
+            "SpeechRecognition",
+            "pydub",
+            "fastapi>=0.100.0",
+            "uvicorn>=0.20.0",
+        ],
     entry_points={
         "console_scripts": [
             "mimo=mimo_farmer.cli:main",

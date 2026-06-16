@@ -9,6 +9,7 @@ Commands:
   mimo create --continuous Keep creating until risk control
   mimo accounts            List created accounts
   mimo export              Export all credentials to single file
+  mimo web                 Start localhost Web UI
 """
 
 import argparse
@@ -42,6 +43,8 @@ examples:
   mimo accounts                 List all created accounts
   mimo export                   Export all credentials to file
   mimo export --output creds.json
+  mimo web                      Start Web UI on 127.0.0.1:8080
+  mimo web --port 9090          Start Web UI on custom port
 """,
     )
     parser.add_argument(
@@ -120,6 +123,28 @@ examples:
         choices=["json", "text"],
         default="json",
         help="Output format (default: json)",
+    )
+
+    p_web = sub.add_parser(
+        "web",
+        help="Start Web UI",
+        description="Start the localhost FastAPI Web UI",
+    )
+    p_web.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Bind host (default: 127.0.0.1)",
+    )
+    p_web.add_argument(
+        "--port",
+        type=int,
+        default=8080,
+        help="Bind port (default: 8080)",
+    )
+    p_web.add_argument(
+        "--reload",
+        action="store_true",
+        help="Enable uvicorn reload mode",
     )
 
     return parser
@@ -760,6 +785,15 @@ def cmd_export(args) -> int:
     return 0
 
 
+def cmd_web(args) -> int:
+    """Handle `mimo web` command."""
+    from mimo_farmer.web.server import run
+
+    print(f"Starting mimo-farmer Web UI at http://{args.host}:{args.port}")
+    run(host=args.host, port=args.port, reload=args.reload)
+    return 0
+
+
 def main() -> int:
     """Main CLI entry point."""
     parser = build_parser()
@@ -773,6 +807,7 @@ def main() -> int:
         "create": cmd_create,
         "accounts": cmd_accounts,
         "export": cmd_export,
+        "web": cmd_web,
     }
 
     handler = handlers.get(args.command)
