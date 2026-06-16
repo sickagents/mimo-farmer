@@ -151,6 +151,11 @@ def cmd_create(args) -> int:
         print("  [!] --siklus and --parallel cannot be used together.")
         return 1
 
+    # --siklus with --referral is meaningless (referral auto-generated from main)
+    if siklus and referral:
+        print("  [!] --referral diabaikan di siklus mode (referral diambil dari akun utama)")
+        referral = None
+
     # Siklus mode: no referral needed (auto-generated from main account)
     if siklus:
         siklus_count = 1
@@ -406,110 +411,141 @@ def _run_siklus(siklus_count: int, fast: bool) -> int:
     total_success = 0
     total_fail = 0
     CHILDREN_PER_SIKLUS = 5
+    last_siklus = 0  # Track last completed siklus for partial summary
 
-    for s in range(1, siklus_count + 1):
-        print(f"\n{'=' * 60}")
-        print(f"  🔄 SIKLUS {s}/{siklus_count}")
-        print(f"{'=' * 60}\n")
-
-        # Step 1: Create main account (no referral)
-        print(f"  [SIKLUS {s}] Creating MAIN account (no referral)...")
-        try:
-            main_result = asyncio.run(create_account(
-                referral_code="",
-                fast=fast,
-                account_num=(s - 1) * 6 + 1,
-                skip_referral=True,
-            ))
-        except Exception as e:
-            print(f"  [!] Main account error: {e}")
-            total_fail += 1
-            continue
-
-        if main_result is None:
-            print(f"  [!] Main account failed — skipping this siklus.")
-            total_fail += 1
-            continue
-
-        total_success += 1
-        all_results.append(main_result)
-
-        main_referral = main_result.get('own_referral')
-        main_email = main_result.get('email', 'N/A')
-        main_balance = main_result.get('balance', 'N/A')
-        print(f"\n  ✅ MAIN account created!")
-        print(f"     Email: {main_email}")
-        print(f"     Balance: {main_balance}")
-        print(f"     Own Referral: {main_referral or 'FAILED TO EXTRACT'}")
-
-        if not main_referral:
-            print(f"  [!] No referral code extracted — cannot create child accounts.")
-            print(f"  [!] Skipping children for siklus {s}.")
-            total_fail += CHILDREN_PER_SIKLUS
-            continue
-
-        # IP rotation check after main account
-        if total_success % 5 == 0:
-            _prompt_ip_rotation(total_success)
-
-        # Cooldown before children
-        cooldown = random.randint(30, 60)
-        print(f"\n  ⏳ Cooldown {cooldown}s before creating children...")
-        _time.sleep(cooldown)
-
-        # Step 2: Create 5 child accounts using main's referral
-        for c in range(1, CHILDREN_PER_SIKLUS + 1):
-            child_num = (s - 1) * 6 + 1 + c
-            print(f"\n  [SIKLUS {s}] Child {c}/{CHILDREN_PER_SIKLUS} (account #{child_num})...")
-
-            # Cooldown between children
-            if c > 1:
+    try:
+        for s in range(1, siklus_count + 1):
+            # Cooldown between siklus cycles (not before first)
+            if s > 1:
                 cooldown = random.randint(30, 60)
-                print(f"\n  ⏳ Cooldown {cooldown}s between children...")
+                print(f"\n  ⏳ Cooldown {cooldown}s between siklus cycles...")
                 _time.sleep(cooldown)
 
+            print(f"\n{'=' * 60}")
+            print(f"  🔄 SIKLUS {s}/{siklus_count}")
+            print(f"{'=' * 60}\n")
+
+            # Step 1: Create main account (no referral)
+            print(f"  [SIKLUS {s}] Creating MAIN account (no referral)...")
             try:
-                child_result = asyncio.run(create_account(
-                    referral_code=main_referral,
+                main_result = asyncio.run(create_account(
+                    referral_code="",
                     fast=fast,
-                    account_num=child_num,
+                    account_num=(s - 1) * 6 + 1,
+                    skip_referral=True,
                 ))
             except Exception as e:
-                print(f"  [!] Child {c} error: {e}")
-                total_fail += 1
+                print(f"  [!] Main account error: {e}")
+                total_fail += 1 + CHILDREN_PER_SIKLUS  # main + all children
                 continue
 
-            if child_result is None:
-                print(f"  [!] Child {c} failed.")
-                total_fail += 1
+            if main_result is None:
+                print(f"  [!] Main account failed — skipping this siklus.")
+                total_fail += 1 + CHILDREN_PER_SIKLUS
                 continue
 
-            if child_result.get('risk_control'):
-                print(f"  [!] RISK CONTROL on child {c}!")
-                print(f"  [!] Main referral '{main_referral}' may be blocked.")
-                print(f"  [!] Stopping children for siklus {s}.")
-                total_fail += 1
-                break
+            # Check main account risk control BEFORE creating children
+            if main_result.get('risk_control'):
+                print(f"  [!] MAIN account hit risk control — skipping children.")
+                total_fail += 1 + CHILDREN_PER_SIKLUS
+                continue
 
             total_success += 1
-            all_results.append(child_result)
-            child_email = child_result.get('email', 'N/A')
-            child_balance = child_result.get('balance', 'N/A')
-            print(f"  ✅ Child {c} created! Email: {child_email} | Balance: {child_balance}")
+            all_results.append(main_result)
 
-            # IP rotation check after each child
+            main_referral = main_result.get('own_referral')
+            main_email = main_result.get('email', 'N/A')
+            main_balance = main_result.get('balance', 'N/A')
+            print(f"\n  ✅ MAIN account created!")
+            print(f"     Email: {main_email}")
+            print(f"     Balance: {main_balance}")
+            print(f"     Own Referral: {main_referral or 'FAILED TO EXTRACT'}")
+
+            if not main_referral:
+                print(f"  [!] No referral code extracted — cannot create child accounts.")
+                print(f"  [!] Skipping children for siklus {s}.")
+                total_fail += CHILDREN_PER_SIKLUS
+                last_siklus = s
+                continue
+
+            # IP rotation check after main account
             if total_success % 5 == 0:
                 _prompt_ip_rotation(total_success)
+
+            # Cooldown before children
+            cooldown = random.randint(30, 60)
+            print(f"\n  ⏳ Cooldown {cooldown}s before creating children...")
+            _time.sleep(cooldown)
+
+            # Step 2: Create 5 child accounts using main's referral
+            children_success = 0
+            for c in range(1, CHILDREN_PER_SIKLUS + 1):
+                child_num = (s - 1) * 6 + 1 + c
+                print(f"\n  [SIKLUS {s}] Child {c}/{CHILDREN_PER_SIKLUS} (account #{child_num})...")
+
+                # Cooldown between children
+                if c > 1:
+                    cooldown = random.randint(30, 60)
+                    print(f"\n  ⏳ Cooldown {cooldown}s between children...")
+                    _time.sleep(cooldown)
+
+                try:
+                    child_result = asyncio.run(create_account(
+                        referral_code=main_referral,
+                        fast=fast,
+                        account_num=child_num,
+                    ))
+                except Exception as e:
+                    print(f"  [!] Child {c} error: {e}")
+                    total_fail += 1
+                    continue
+
+                if child_result is None:
+                    print(f"  [!] Child {c} failed.")
+                    total_fail += 1
+                    continue
+
+                if child_result.get('risk_control'):
+                    remaining = CHILDREN_PER_SIKLUS - c
+                    print(f"  [!] RISK CONTROL on child {c}!")
+                    print(f"  [!] Main referral '{main_referral}' may be blocked.")
+                    print(f"  [!] Stopping children for siklus {s}. ({remaining} children skipped)")
+                    total_fail += 1 + remaining  # this child + remaining skipped
+                    break
+
+                total_success += 1
+                children_success += 1
+                all_results.append(child_result)
+                child_email = child_result.get('email', 'N/A')
+                child_balance = child_result.get('balance', 'N/A')
+                print(f"  ✅ Child {c} created! Email: {child_email} | Balance: {child_balance}")
+
+                # IP rotation check after each child
+                if total_success % 5 == 0:
+                    _prompt_ip_rotation(total_success)
+
+            last_siklus = s
+            print(f"\n  Siklus {s} done: 1 main + {children_success}/{CHILDREN_PER_SIKLUS} children")
+
+    except KeyboardInterrupt:
+        print(f"\n\n  [!] Interrupted by user (Ctrl+C)")
+        print(f"  [!] Saving partial results...")
+
+    # Calculate actual counts for summary
+    actual_main = sum(1 for r in all_results if r and r.get('own_referral') is not None)
+    actual_children = sum(1 for r in all_results if r and r.get('own_referral') is None)
+    child_bonus = actual_children * 2
 
     # Final summary
     print(f"\n{'=' * 60}")
     print(f"  🔄 SIKLUS MODE — FINAL SUMMARY")
     print(f"{'=' * 60}")
-    print(f"  Total siklus:     {siklus_count}")
+    print(f"  Siklus completed: {last_siklus}/{siklus_count}")
     print(f"  Total success:    {total_success}")
     print(f"  Total failed:     {total_fail}")
-    print(f"  Expected main:    ${siklus_count * 10:.2f} (${10:.2f} × {siklus_count})")
-    print(f"  Expected children: ${min(total_success - siklus_count, siklus_count * CHILDREN_PER_SIKLUS) * 2:.2f}")
+    print(f"  Main accounts:    {actual_main}")
+    print(f"  Child accounts:   {actual_children}")
+    print(f"  Referral bonus:   ${child_bonus:.2f} (${2:.2f} × {actual_children} children)")
     print(f"{'=' * 60}")
 
     # Save combined

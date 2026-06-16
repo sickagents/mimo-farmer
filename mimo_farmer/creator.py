@@ -381,6 +381,7 @@ async def extract_own_referral_code(page) -> str | None:
         await page.goto(INVITE_URL, wait_until='domcontentloaded')
         await asyncio.sleep(4)
         await handle_dialogs(page)
+        await handle_terms_dialog(page)
 
         # Strategy 1: Look for a copyable code element (common patterns)
         code_selectors = [
@@ -414,8 +415,13 @@ async def extract_own_referral_code(page) -> str | None:
                 # Look for patterns like "Your code: ABC123" or "ABC123"
                 candidates = re.findall(r'\b([A-Z0-9]{6})\b', body.upper())
                 # Filter out common non-code strings
-                blacklist = {'INVITE', 'REFERR', 'MI MORE', 'XIAOMI', 'ACCEPT', 'CONFIRM',
-                             'SUBMIT', 'CANCEL', 'CREATE', 'DELETE', 'SEARCH', 'FILTER'}
+                blacklist = {
+                    'INVITE', 'REFERR', 'XIAOMI', 'ACCEPT', 'CONFIRM', 'SUBMIT',
+                    'CANCEL', 'CREATE', 'DELETE', 'SEARCH', 'FILTER', 'COOKIE',
+                    'POLICY', 'LAYOUT', 'MODULE', 'RETURN', 'BEFORE', 'AFTER',
+                    'FINISH', 'OPTION', 'NUMBER', 'DETAIL', 'RESULT', 'MI MORE',
+                    'BUTTON', 'CLOSED', 'SAVED', 'STATUS', 'RETRY', 'LOGIN',
+                }
                 for c in candidates:
                     if c not in blacklist:
                         own_code = c
@@ -474,6 +480,14 @@ async def extract_own_referral_code(page) -> str | None:
 
     except Exception as e:
         print(f"  [!] Invite page error: {e}")
+
+    # CRITICAL: Navigate back to balance page so caller's risk control / balance checks
+    # read from the correct page (not the invite page).
+    try:
+        await page.goto(BALANCE_URL, wait_until='domcontentloaded')
+        await asyncio.sleep(2)
+    except Exception:
+        pass
 
     if not own_code:
         print("  [!] Could not extract own referral code from any method")
@@ -1271,14 +1285,9 @@ async def create_account(
         timer.phase("Risk control check")
 
         # Phase 10: Verify balance — MUST be $2.72 before continuing
-        # Skip wait when risk_control detected — $2.72 won't arrive
         print("[11] Verifying balance...")
-        if risk_control:
-            balance = await extract_balance(page)
-            print(f"  Balance: {balance} (risk control — skipped 10s wait)")
-        else:
-            balance = await wait_for_balance_272(page, timeout=10)
-            print(f"  Balance: {balance}")
+        balance = await wait_for_balance_272(page, timeout=10)
+        print(f"  Balance: {balance}")
         timer.phase("Balance verify")
 
         if balance != "$2.72":
