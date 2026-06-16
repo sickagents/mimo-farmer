@@ -1093,6 +1093,25 @@ async def create_account(
             captcha_rounds += 1
             captcha_solved_this_round = False
 
+            # If we already solved something in a previous round, check if page progressed
+            # (frame detach means signup submitted — page may have moved on)
+            if captcha_rounds > 1:
+                page_progressed = await page.evaluate("""
+                    (() => {
+                        const body = document.body?.innerText || '';
+                        const url = window.location.href;
+                        // If we're past signup/CAPTTCHA, break the loop
+                        if (body.includes('Enter the verification code')) return true;
+                        if (body.includes('OTP') || body.includes('one-time')) return true;
+                        if (url.includes('verify') || url.includes('otp')) return true;
+                        if (!body.includes('Sign up') && !body.includes('Create an account')) return true;
+                        return false;
+                    })()
+                """)
+                if page_progressed:
+                    print(f"  [captcha] Page progressed past CAPTCHA stage — done (round {captcha_rounds})")
+                    break
+
             # Check 1: Xiaomi text CAPTCHA popup (manual solve by user)
             is_xiaomi_captcha = await detect_xiaomi_captcha(page)
             if is_xiaomi_captcha:
