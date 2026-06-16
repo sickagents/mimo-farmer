@@ -1108,12 +1108,22 @@ async def create_account(
 
             # Check 2: reCAPTCHA anchor frame (automated audio solve)
             has_recaptcha = False
+            recaptcha_already_solved = False
             for frame in page.frames:
                 if 'anchor' in frame.url and 'recaptcha' in frame.url:
                     has_recaptcha = True
+                    # Check if already solved (aria-checked="true")
+                    try:
+                        checked = await frame.evaluate(
+                            "document.getElementById('recaptcha-anchor')?.getAttribute('aria-checked') || 'false'"
+                        )
+                        if checked == 'true':
+                            recaptcha_already_solved = True
+                    except Exception:
+                        pass
                     break
 
-            if has_recaptcha:
+            if has_recaptcha and not recaptcha_already_solved:
                 print(f"  [!] reCAPTCHA detected (round {captcha_rounds})")
                 captcha_ok = await solve_recaptcha(page)
                 if not captcha_ok:
@@ -1123,6 +1133,8 @@ async def create_account(
                 captcha_solved_this_round = True
                 await asyncio.sleep(2)  # Wait for page to update after solve
                 continue  # Re-check for more CAPTCHAs (Xiaomi may appear after reCAPTCHA)
+            elif has_recaptcha and recaptcha_already_solved:
+                print(f"  [✓] reCAPTCHA already solved (round {captcha_rounds}) — skipping")
 
             # Neither detected this round
             if captcha_solved_this_round:
