@@ -622,11 +622,23 @@ async def solve_recaptcha(page, max_retries: int = CAPTCHA_MAX_RETRIES) -> bool:
             if 'automated' in err.lower():
                 print(f"  [!] Rate limited: {err}")
                 return False
-            try:
-                await bframe.locator('#recaptcha-reload-button').click()
-                await asyncio.sleep(1.5)
-            except Exception:
-                pass
+            # Check if we're still on image mode (audio button visible means not switched yet)
+            is_image_mode = await bframe.evaluate(
+                "!!document.querySelector('#recaptcha-audio-button') && !document.querySelector('#audio-source')"
+            )
+            if is_image_mode:
+                print(f"  [captcha] Still on image mode — clicking audio button again (attempt {attempt + 1})")
+                try:
+                    await bframe.locator('#recaptcha-audio-button').click()
+                    await asyncio.sleep(1.5)
+                except Exception:
+                    pass
+            else:
+                try:
+                    await bframe.locator('#recaptcha-reload-button').click()
+                    await asyncio.sleep(1.5)
+                except Exception:
+                    pass
             continue
 
         # CRITICAL: Download audio from bframe context (NOT main page — CORS blocks)
