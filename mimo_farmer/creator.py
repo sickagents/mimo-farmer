@@ -963,7 +963,7 @@ async def create_account(
         page = await context.new_page()
 
         # Apply anti-detection stealth JS
-        await apply_stealth(context, page)
+        await apply_stealth(context, page, fp)
 
         # Phase 1: Navigate directly to signup page (no tab click needed)
         print("[1] Navigating to signup...")

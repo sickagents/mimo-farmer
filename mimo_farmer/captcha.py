@@ -704,7 +704,8 @@ async def solve_recaptcha(page, max_retries: int = CAPTCHA_MAX_RETRIES) -> bool:
             await response.type(char, delay=random.randint(50, 120))
             await asyncio.sleep(random.uniform(0.02, 0.08))
 
-        await asyncio.sleep(random.uniform(0.3, 0.6))
+        # Human-like pause before submitting (listen to audio again, think about answer)
+        await asyncio.sleep(random.uniform(2.0, 4.5))
         verify_btn = bframe.locator('#recaptcha-verify-button')
         try:
             await verify_btn.scroll_into_view_if_needed(timeout=3000)

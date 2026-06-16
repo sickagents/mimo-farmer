@@ -43,42 +43,114 @@ VIEWPORTS = [
     {"width": 1360, "height": 768},
 ]
 
-# Common timezones
-TIMEZONES = [
-    "America/New_York",
-    "America/Chicago",
-    "America/Los_Angeles",
-    "Europe/London",
-    "Europe/Berlin",
-    "Europe/Paris",
-    "Asia/Jakarta",
-    "Asia/Singapore",
-    "Asia/Tokyo",
-    "Asia/Seoul",
-    "Australia/Sydney",
-]
+# ─────────────────────────────────────────────────────────────
+# Fingerprint Profiles — consistent UA + timezone + locale
+# ─────────────────────────────────────────────────────────────
 
-# Common languages
-LOCALES = [
-    "en-US",
-    "en-GB",
-    "en-AU",
-    "en-CA",
-    "id-ID",
+# Each profile: (UA, timezone, locale, webgl_vendor, webgl_renderer)
+# OS-region matched so Google doesn't flag mismatched fingerprints
+FINGERPRINT_PROFILES = [
+    # Windows US
+    {
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "timezone": "America/New_York",
+        "locale": "en-US",
+        "webgl_vendor": "Google Inc. (NVIDIA)",
+        "webgl_renderer": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1650 Direct3D11 vs_5_0 ps_5_0)",
+    },
+    {
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+        "timezone": "America/Chicago",
+        "locale": "en-US",
+        "webgl_vendor": "Google Inc. (NVIDIA)",
+        "webgl_renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0)",
+    },
+    {
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+        "timezone": "America/Los_Angeles",
+        "locale": "en-US",
+        "webgl_vendor": "Google Inc. (Intel)",
+        "webgl_renderer": "ANGLE (Intel, Intel(R) UHD Graphics Direct3D11 vs_5_0 ps_5_0)",
+    },
+    {
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        "timezone": "Europe/London",
+        "locale": "en-GB",
+        "webgl_vendor": "Google Inc. (NVIDIA)",
+        "webgl_renderer": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1050 Ti Direct3D11 vs_5_0 ps_5_0)",
+    },
+    {
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
+        "timezone": "Europe/Berlin",
+        "locale": "en-US",
+        "webgl_vendor": "Google Inc. (AMD)",
+        "webgl_renderer": "ANGLE (AMD, AMD Radeon RX 580 Direct3D11 vs_5_0 ps_5_0)",
+    },
+    # macOS US
+    {
+        "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "timezone": "America/New_York",
+        "locale": "en-US",
+        "webgl_vendor": "Apple",
+        "webgl_renderer": "Apple GPU",
+    },
+    {
+        "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+        "timezone": "America/Los_Angeles",
+        "locale": "en-US",
+        "webgl_vendor": "Apple",
+        "webgl_renderer": "Apple GPU",
+    },
+    # Windows AU
+    {
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36",
+        "timezone": "Australia/Sydney",
+        "locale": "en-AU",
+        "webgl_vendor": "Google Inc. (NVIDIA)",
+        "webgl_renderer": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1650 Direct3D11 vs_5_0 ps_5_0)",
+    },
+    # Linux US
+    {
+        "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "timezone": "America/New_York",
+        "locale": "en-US",
+        "webgl_vendor": "Google Inc. (NVIDIA)",
+        "webgl_renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0)",
+    },
+    # Windows ID (for Indonesian IP)
+    {
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "timezone": "Asia/Jakarta",
+        "locale": "id-ID",
+        "webgl_vendor": "Google Inc. (NVIDIA)",
+        "webgl_renderer": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1650 Direct3D11 vs_5_0 ps_5_0)",
+    },
+    # Windows SG
+    {
+        "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+        "timezone": "Asia/Singapore",
+        "locale": "en-US",
+        "webgl_vendor": "Google Inc. (Intel)",
+        "webgl_renderer": "ANGLE (Intel, Intel(R) UHD Graphics Direct3D11 vs_5_0 ps_5_0)",
+    },
 ]
 
 
 def random_fingerprint() -> dict:
-    """Generate random browser fingerprint settings."""
-    ua = random.choice(USER_AGENTS)
+    """Generate random but CONSISTENT browser fingerprint settings.
+
+    UA, timezone, locale, WebGL vendor/renderer are matched per profile
+    so Google doesn't flag mismatched fingerprints (e.g., Mac + Jakarta timezone).
+    """
+    profile = random.choice(FINGERPRINT_PROFILES)
     viewport = random.choice(VIEWPORTS)
-    timezone = random.choice(TIMEZONES)
-    locale = random.choice(LOCALES)
     return {
-        "user_agent": ua,
+        "user_agent": profile["ua"],
         "viewport": viewport,
-        "timezone": timezone,
-        "locale": locale,
+        "timezone": profile["timezone"],
+        "locale": profile["locale"],
+        "webgl_vendor": profile["webgl_vendor"],
+        "webgl_renderer": profile["webgl_renderer"],
     }
 
 
@@ -153,21 +225,15 @@ STEALTH_JS = """
     };
 
     // 5. WebGL noise — override getParameter for vendor/renderer
+    // These values are injected dynamically from the fingerprint profile
+    const __WEBGL_VENDOR__ = 'VENDOR_PLACEHOLDER';
+    const __WEBGL_RENDERER__ = 'RENDERER_PLACEHOLDER';
     const getParam = WebGLRenderingContext.prototype.getParameter;
     WebGLRenderingContext.prototype.getParameter = function(param) {
         // UNMASKED_VENDOR_WEBGL
-        if (param === 0x9245) return 'Google Inc. (NVIDIA)';
+        if (param === 0x9245) return __WEBGL_VENDOR__;
         // UNMASKED_RENDERER_WEBGL
-        if (param === 0x9246) {
-            const renderers = [
-                'ANGLE (NVIDIA, NVIDIA GeForce GTX 1650 Direct3D11 vs_5_0 ps_5_0)',
-                'ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0)',
-                'ANGLE (NVIDIA, NVIDIA GeForce GTX 1050 Ti Direct3D11 vs_5_0 ps_5_0)',
-                'ANGLE (Intel, Intel(R) UHD Graphics Direct3D11 vs_5_0 ps_5_0)',
-                'ANGLE (AMD, AMD Radeon RX 580 Direct3D11 vs_5_0 ps_5_0)',
-            ];
-            return renderers[Math.floor(Math.random() * renderers.length)];
-        }
+        if (param === 0x9246) return __WEBGL_RENDERER__;
         return getParam.call(this, param);
     };
 
@@ -331,16 +397,28 @@ async def clear_device_cookies(context):
 # Integration helper — apply all stealth to context+page
 # ─────────────────────────────────────────────────────────────
 
-async def apply_stealth(context, page):
+async def apply_stealth(context, page, fingerprint: dict = None):
     """Apply all anti-detection measures to a browser context and page.
 
     Call this right after creating context + page, BEFORE any navigation.
+
+    Args:
+        fingerprint: Optional fingerprint dict from random_fingerprint().
+                     If provided, WebGL vendor/renderer are set to match the profile.
     """
+    # Replace WebGL placeholders with profile-specific values
+    js = STEALTH_JS
+    if fingerprint:
+        vendor = fingerprint.get("webgl_vendor", "Google Inc. (NVIDIA)")
+        renderer = fingerprint.get("webgl_renderer", "ANGLE (NVIDIA, NVIDIA GeForce GTX 1650 Direct3D11 vs_5_0 ps_5_0)")
+        js = js.replace("'VENDOR_PLACEHOLDER'", repr(vendor))
+        js = js.replace("'RENDERER_PLACEHOLDER'", repr(renderer))
+
     # Inject stealth JS before every page load
-    await context.add_init_script(STEALTH_JS)
+    await context.add_init_script(js)
 
     # Also inject on current page (in case already loaded)
     try:
-        await page.evaluate(STEALTH_JS)
+        await page.evaluate(js)
     except Exception:
         pass
