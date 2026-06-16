@@ -1179,16 +1179,32 @@ async def create_account(
             timer.phase("CAPTCHA solve")
 
             # Phase 4: OTP
+            # Wait for page to stabilize after CAPTCHA (page may have navigated)
+            await asyncio.sleep(2)
+            
             # Check for "not safe" email warning that may appear after CAPTCHA
-            post_captcha_email_check = await page.evaluate("""
-                (() => {
-                    const body = document.body?.innerText || '';
-                    const lower = body.toLowerCase();
-                    if (lower.includes('not safe') || lower.includes("isn't safe") || lower.includes('unsafe')) return 'not_safe';
-                    if (lower.includes('not supported') && lower.includes('email')) return 'not_supported';
-                    return '';
-                })()
-            """)
+            try:
+                post_captcha_email_check = await page.evaluate("""
+                    (() => {
+                        const body = document.body?.innerText || '';
+                        const lower = body.toLowerCase();
+                        if (lower.includes('not safe') || lower.includes("isn't safe") || lower.includes('unsafe')) return 'not_safe';
+                        if (lower.includes('not supported') && lower.includes('email')) return 'not_supported';
+                        return '';
+                    })()
+                """)
+            except Exception as e:
+                print(f"  [!] Page state changed after CAPTCHA: {e}")
+                # Page may have navigated — check URL
+                try:
+                    current_url = page.url
+                    print(f"  [!] Current URL: {current_url}")
+                    if 'account.xiaomi.com' in current_url:
+                        post_captcha_email_check = ''  # Already past signup
+                    else:
+                        post_captcha_email_check = 'page_error'
+                except Exception:
+                    post_captcha_email_check = 'page_error'
             if post_captcha_email_check:
                 print(f"  [!] Email rejected after CAPTCHA ({post_captcha_email_check}) — need new email")
                 code = "__UNSAFE__"
