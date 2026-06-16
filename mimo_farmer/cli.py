@@ -660,6 +660,7 @@ def _save_combined(results: list, referral: str) -> None:
             print(f"  [!] Account {i}: API key is MASKED ({api_key[:15]}...) — re-run to get full key")
         lines.append(f"[{i}]")
         lines.append(f"Mail: {creds['email']}")
+        lines.append(f"Link: https://generator.email/{creds['email']}")
         lines.append(f"Pw: {creds['password']}")
         lines.append(f"Api-Key: {api_key}")
         lines.append("")

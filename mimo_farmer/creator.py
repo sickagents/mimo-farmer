@@ -1307,6 +1307,7 @@ async def create_account(
         print("[13] Saving credentials...")
         creds = {
             "email": email,
+            "email_link": f"https://generator.email/{email}",
             "password": password,
             "balance": balance,
             "referral": referral_code,
@@ -1323,6 +1324,7 @@ async def create_account(
         with open(filepath, "w") as f:
             f.write(f"=== MiMo Account {account_num} ===\n")
             f.write(f"Email: {email}\n")
+            f.write(f"Email Link: https://generator.email/{email}\n")
             f.write(f"Password: {password}\n")
             f.write(f"Balance: {balance}\n")
             f.write(f"Referral: {referral_code}\n")
