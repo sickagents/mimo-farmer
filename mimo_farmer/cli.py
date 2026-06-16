@@ -644,7 +644,7 @@ def _save_combined(results: list, referral: str) -> None:
     """
     from mimo_farmer.config import ACCOUNTS_DIR
 
-    valid = [r for r in results if r is not None and r.get('balance') == '$2.72']
+    valid = [r for r in results if r is not None and r.get('balance')]
     if not valid:
         return
 
