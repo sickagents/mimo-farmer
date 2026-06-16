@@ -123,9 +123,49 @@ async def solve_text_captcha(page, max_retries: int = 3) -> bool:
                 await asyncio.sleep(1)
                 continue
 
-            # OCR
-            result = ocr.classification(img_bytes)
-            result = result.strip()
+            # Save debug image for inspection
+            try:
+                debug_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'debug')
+                os.makedirs(debug_dir, exist_ok=True)
+                debug_path = os.path.join(debug_dir, f'captcha_{attempt}.png')
+                with open(debug_path, 'wb') as f:
+                    f.write(img_bytes)
+                print(f"  [captcha] Debug image saved: {debug_path} ({len(img_bytes)} bytes)")
+            except Exception:
+                pass
+
+            # Preprocess image: grayscale + threshold for better OCR
+            try:
+                from PIL import Image, ImageFilter
+                import io
+                img = Image.open(io.BytesIO(img_bytes))
+                # Convert to grayscale
+                img = img.convert('L')
+                # Apply threshold to make text clearer
+                img = img.point(lambda x: 0 if x < 140 else 255, '1')
+                # Convert back to bytes
+                buf = io.BytesIO()
+                img.save(buf, format='PNG')
+                preprocessed_bytes = buf.getvalue()
+                print(f"  [captcha] Preprocessed image: {img.size[0]}x{img.size[1]}")
+
+                # Try OCR on preprocessed image first
+                result_pp = ocr.classification(preprocessed_bytes).strip()
+                # Also try on original
+                result_raw = ocr.classification(img_bytes).strip()
+
+                # Pick the better result (longer, more likely correct)
+                if result_pp and len(result_pp) >= len(result_raw):
+                    result = result_pp
+                    print(f"  [captcha] Using preprocessed result: '{result}' (raw was '{result_raw}')")
+                else:
+                    result = result_raw
+                    print(f"  [captcha] Using raw result: '{result}' (preprocessed was '{result_pp}')")
+            except Exception as e:
+                # Fallback: just use raw OCR
+                result = ocr.classification(img_bytes)
+                result = result.strip()
+                print(f"  [captcha] Preprocess failed ({e}), using raw OCR")
 
             if not result or len(result) < 2:
                 print(f"  [captcha] OCR returned empty/short: '{result}' (attempt {attempt})")
