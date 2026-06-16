@@ -997,6 +997,34 @@ async def create_account(
         # Phase 2: Fill form
         print("[2] Filling form...")
         try:
+            # Random country selection
+            COUNTRIES = [
+                "United States", "United Kingdom", "Canada", "Australia", "Germany",
+                "France", "Japan", "South Korea", "Singapore", "Thailand",
+                "Malaysia", "Philippines", "Vietnam", "India", "Brazil",
+                "Mexico", "Turkey", "Netherlands", "Sweden", "Poland",
+            ]
+            selected_country = random.choice(COUNTRIES)
+            try:
+                # Click the country/region selector (the combobox area)
+                country_selector = page.locator('[class*="region"], [class*="country"], [class*="select"]').first
+                if await country_selector.is_visible(timeout=2000):
+                    await country_selector.click()
+                    await asyncio.sleep(0.5)
+                    # Type to search for country
+                    search_input = page.locator('input[placeholder*="Search"], input[placeholder*="country"]').first
+                    if await search_input.is_visible(timeout=1000):
+                        await search_input.fill(selected_country)
+                        await asyncio.sleep(0.3)
+                    # Click the country option
+                    await page.locator(f'text="{selected_country}"').first.click()
+                    await asyncio.sleep(0.5)
+                    print(f"  Country: {selected_country}")
+                else:
+                    print(f"  [!] Country selector not found")
+            except Exception as e:
+                print(f"  [!] Country selection skipped: {e}")
+
             email_field = page.get_by_role('textbox', name='Email')
             await email_field.wait_for(state='visible', timeout=15000)
             await email_field.fill(email)
