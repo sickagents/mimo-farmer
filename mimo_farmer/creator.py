@@ -659,6 +659,9 @@ async def handle_identity_verification(page, user: str, domain: str, fast: bool 
     skip = [first_otp] if first_otp else []
     code = await wait_for_otp(page, user, domain, timeout=180, skip_codes=skip)
 
+    if code == "__UNSAFE__":
+        print("  [!] Email domain not supported by generator.email!")
+        return False
     if not code:
         print("  [!] Verification code not received after 180s!")
         return True
@@ -1020,167 +1023,243 @@ async def create_account(
             return None
         timer.phase("Fill form")
 
-        # Phase 3: Submit + CAPTCHA (dual detection: reCAPTCHA OR Xiaomi text)
-        # Include email retry logic — if email is rejected, generate new one
-        while True:
-            print("[3] Clicking Next + solving CAPTCHA...")
-            try:
-                await page.get_by_role('button', name='Next').click(timeout=5000)
-            except Exception:
+        # Phase 3: Submit + CAPTCHA + OTP (with email retry on "not safe")
+        # Outer loop: retries with new email when Xiaomi says "not safe"
+        email_signup_attempt = 0
+        MAX_EMAIL_SIGNUP_ATTEMPTS = 3
+
+        while email_signup_attempt <= MAX_EMAIL_SIGNUP_ATTEMPTS:
+            if email_signup_attempt > 0:
+                print(f"\n  [retry] Email signup attempt {email_signup_attempt}/{MAX_EMAIL_SIGNUP_ATTEMPTS}")
+
+            # Inner loop: Click Next + handle immediate email rejection
+            while True:
+                print("[3] Clicking Next + solving CAPTCHA...")
                 try:
-                    await page.locator('button[type="submit"]').click(timeout=3000)
+                    await page.get_by_role('button', name='Next').click(timeout=5000)
                 except Exception:
-                    pass
+                    try:
+                        await page.locator('button[type="submit"]').click(timeout=3000)
+                    except Exception:
+                        pass
 
-            # Wait for page transition after Next click
-            await asyncio.sleep(3)
+                # Wait for page transition after Next click
+                await asyncio.sleep(3)
 
-            # Check for email validation error (email domain rejected by Xiaomi)
-            email_rejected = await page.evaluate("""
+                # Check for email validation error (email domain rejected by Xiaomi)
+                email_rejected = await page.evaluate("""
+                    (() => {
+                        const body = document.body?.innerText || '';
+                        const lower = body.toLowerCase();
+                        // Common error messages when email is not accepted
+                        if (lower.includes('not supported') && lower.includes('email')) return 'not_supported';
+                        if (lower.includes('invalid email')) return 'invalid';
+                        if (lower.includes('email address is not valid')) return 'invalid';
+                        if (lower.includes('please enter a valid email')) return 'invalid';
+                        if (lower.includes('邮箱')) return 'email_error';
+                        // "not safe" / "isn't safe" / "unsafe" email warning
+                        if (lower.includes('not safe') || lower.includes("isn't safe") || lower.includes('unsafe')) return 'not_safe';
+                        // Check for inline error near email field
+                        const errors = document.querySelectorAll('.ant-form-item-explain-error, .error-message, [class*="error"]');
+                        for (const el of errors) {
+                            const t = (el.textContent || '').toLowerCase();
+                            if (t.includes('email') || t.includes('not supported') || t.includes('invalid') || t.includes('not safe') || t.includes('unsafe')) {
+                                return 'inline_error';
+                            }
+                        }
+                        return '';
+                    })()
+                """)
+
+                if email_rejected and email_retries < MAX_EMAIL_RETRIES:
+                    email_retries += 1
+                    print(f"  [!] Email rejected ({email_rejected}) — trying new domain (attempt {email_retries}/{MAX_EMAIL_RETRIES})")
+                    email, user, domain = random_email(available_domains)
+                    print(f"  [email] New email: {email}")
+
+                    # Clear and refill email field
+                    try:
+                        email_field = page.get_by_role('textbox', name='Email')
+                        await email_field.wait_for(state='visible', timeout=5000)
+                        await email_field.fill('')
+                        await asyncio.sleep(0.3)
+                        await email_field.fill(email)
+                        await human_delay(150, 350, fast)
+                    except Exception:
+                        # Fallback selector
+                        try:
+                            await page.locator('input[type="email"]').fill(email)
+                        except Exception:
+                            print("  [!] Could not update email field")
+                            break
+                    continue  # Click Next again with new email
+
+                break  # No email rejection or max retries reached — proceed
+
+            # DETECT and solve ALL CAPTCHAs in a loop
+            # Both reCAPTCHA AND Xiaomi text CAPTCHA can appear (sometimes both!)
+            # Keep solving until neither is detected
+            captcha_rounds = 0
+            MAX_CAPTCHA_ROUNDS = 5
+            recaptcha_solved = False  # Track if we already solved reCAPTCHA
+
+            while captcha_rounds < MAX_CAPTCHA_ROUNDS:
+                captcha_rounds += 1
+
+                # If we already solved something, check if page progressed past CAPTCHA
+                if captcha_rounds > 1:
+                    page_progressed = await page.evaluate("""
+                        (() => {
+                            const body = document.body?.innerText || '';
+                            const url = window.location.href;
+                            if (body.includes('Enter the verification code')) return true;
+                            if (body.includes('OTP') || body.includes('one-time')) return true;
+                            if (url.includes('verify') || url.includes('otp')) return true;
+                            return false;
+                        })()
+                    """)
+                    if page_progressed:
+                        print(f"  [captcha] Page progressed past CAPTCHA stage — done (round {captcha_rounds})")
+                        break
+
+                # Check 1: Xiaomi text CAPTCHA popup (auto ddddocr + manual fallback)
+                is_xiaomi_captcha = await detect_xiaomi_captcha(page)
+                if is_xiaomi_captcha:
+                    print(f"  [!] Xiaomi text CAPTCHA detected (round {captcha_rounds})")
+                    captcha_ok = await solve_text_captcha(page)
+                    if not captcha_ok:
+                        print("[X] Xiaomi text CAPTCHA failed!")
+                        await browser.close()
+                        return None
+                    await asyncio.sleep(2)
+                    continue
+
+                # Check 2: reCAPTCHA anchor frame (automated audio solve)
+                # Skip if we already solved reCAPTCHA (page may show stale frame)
+                has_recaptcha = False
+                recaptcha_already_checked = False
+                for frame in page.frames:
+                    if 'anchor' in frame.url and 'recaptcha' in frame.url:
+                        has_recaptcha = True
+                        try:
+                            checked = await frame.evaluate(
+                                "document.getElementById('recaptcha-anchor')?.getAttribute('aria-checked') || 'false'"
+                            )
+                            if checked == 'true':
+                                recaptcha_already_checked = True
+                        except Exception:
+                            pass
+                        break
+
+                if has_recaptcha and not recaptcha_already_checked and not recaptcha_solved:
+                    print(f"  [!] reCAPTCHA detected (round {captcha_rounds})")
+                    captcha_ok = await solve_recaptcha(page)
+                    if captcha_ok:
+                        recaptcha_solved = True
+                    else:
+                        print("[X] reCAPTCHA failed!")
+                        await browser.close()
+                        return None
+                    await asyncio.sleep(2)
+                    continue
+                elif has_recaptcha and (recaptcha_already_checked or recaptcha_solved):
+                    print(f"  [✓] reCAPTCHA already solved (round {captcha_rounds}) — skipping")
+                    # Don't loop forever on stale frame
+                    await asyncio.sleep(2)
+                    # Check one more time if Xiaomi CAPTCHA appeared
+                    if await detect_xiaomi_captcha(page):
+                        continue
+                    break  # No new CAPTCHA — done
+
+                # Neither detected — wait and check once more
+                if captcha_rounds <= 2:
+                    await asyncio.sleep(3)
+                    continue
+
+                # Multiple rounds with no CAPTCHA — done
+                break
+
+            print(f"  CAPTCHA handling done ({captcha_rounds} round(s))")
+            timer.phase("CAPTCHA solve")
+
+            # Phase 4: OTP
+            # Check for "not safe" email warning that may appear after CAPTCHA
+            post_captcha_email_check = await page.evaluate("""
                 (() => {
                     const body = document.body?.innerText || '';
                     const lower = body.toLowerCase();
-                    // Common error messages when email is not accepted
+                    if (lower.includes('not safe') || lower.includes("isn't safe") || lower.includes('unsafe')) return 'not_safe';
                     if (lower.includes('not supported') && lower.includes('email')) return 'not_supported';
-                    if (lower.includes('invalid email')) return 'invalid';
-                    if (lower.includes('email address is not valid')) return 'invalid';
-                    if (lower.includes('please enter a valid email')) return 'invalid';
-                    if (lower.includes('邮箱')) return 'email_error';
-                    // Check for inline error near email field
-                    const errors = document.querySelectorAll('.ant-form-item-explain-error, .error-message, [class*="error"]');
-                    for (const el of errors) {
-                        const t = (el.textContent || '').toLowerCase();
-                        if (t.includes('email') || t.includes('not supported') || t.includes('invalid')) {
-                            return 'inline_error';
-                        }
-                    }
                     return '';
                 })()
             """)
+            if post_captcha_email_check:
+                print(f"  [!] Email rejected after CAPTCHA ({post_captcha_email_check}) — need new email")
+                code = "__UNSAFE__"
+            else:
+                print("[4] Waiting for OTP page...")
+                try:
+                    await page.locator(
+                        'input[type="text"], input[type="number"], input[inputmode="numeric"]'
+                    ).first.wait_for(state='visible', timeout=15000)
+                except Exception:
+                    await asyncio.sleep(3)
 
-            if email_rejected and email_retries < MAX_EMAIL_RETRIES:
-                email_retries += 1
-                print(f"  [!] Email rejected ({email_rejected}) — trying new domain (attempt {email_retries}/{MAX_EMAIL_RETRIES})")
+                print("[5] Getting OTP...")
+                code = await wait_for_otp(page, user, domain)
+
+            # Handle "not safe" email — retry with new email
+            if code == "__UNSAFE__":
+                email_signup_attempt += 1
+                if email_signup_attempt > MAX_EMAIL_SIGNUP_ATTEMPTS:
+                    print("[X] Max email signup attempts reached!")
+                    await browser.close()
+                    return None
+
+                print(f"  [!] Unsafe email — retrying signup with new email (attempt {email_signup_attempt}/{MAX_EMAIL_SIGNUP_ATTEMPTS})")
                 email, user, domain = random_email(available_domains)
                 print(f"  [email] New email: {email}")
 
-                # Clear and refill email field
-                try:
-                    email_field = page.get_by_role('textbox', name='Email')
-                    await email_field.wait_for(state='visible', timeout=5000)
-                    await email_field.fill('')
-                    await asyncio.sleep(0.3)
-                    await email_field.fill(email)
-                    await human_delay(150, 350, fast)
-                except Exception:
-                    # Fallback selector
+                # Navigate back to signup page
+                await page.goto(SIGNUP_URL, wait_until='domcontentloaded')
+                await asyncio.sleep(3)
+
+                # Wait for signup form
+                for _ in range(5):
                     try:
-                        await page.locator('input[type="email"]').fill(email)
-                    except Exception:
-                        print("  [!] Could not update email field")
-                        break
-                continue  # Click Next again with new email
-
-            break  # No email rejection or max retries reached — proceed
-
-        # DETECT and solve ALL CAPTCHAs in a loop
-        # Both reCAPTCHA AND Xiaomi text CAPTCHA can appear (sometimes both!)
-        # Keep solving until neither is detected
-        captcha_rounds = 0
-        MAX_CAPTCHA_ROUNDS = 5
-        recaptcha_solved = False  # Track if we already solved reCAPTCHA
-
-        while captcha_rounds < MAX_CAPTCHA_ROUNDS:
-            captcha_rounds += 1
-
-            # If we already solved something, check if page progressed past CAPTCHA
-            if captcha_rounds > 1:
-                page_progressed = await page.evaluate("""
-                    (() => {
-                        const body = document.body?.innerText || '';
-                        const url = window.location.href;
-                        if (body.includes('Enter the verification code')) return true;
-                        if (body.includes('OTP') || body.includes('one-time')) return true;
-                        if (url.includes('verify') || url.includes('otp')) return true;
-                        return false;
-                    })()
-                """)
-                if page_progressed:
-                    print(f"  [captcha] Page progressed past CAPTCHA stage — done (round {captcha_rounds})")
-                    break
-
-            # Check 1: Xiaomi text CAPTCHA popup (auto ddddocr + manual fallback)
-            is_xiaomi_captcha = await detect_xiaomi_captcha(page)
-            if is_xiaomi_captcha:
-                print(f"  [!] Xiaomi text CAPTCHA detected (round {captcha_rounds})")
-                captcha_ok = await solve_text_captcha(page)
-                if not captcha_ok:
-                    print("[X] Xiaomi text CAPTCHA failed!")
-                    await browser.close()
-                    return None
-                await asyncio.sleep(2)
-                continue
-
-            # Check 2: reCAPTCHA anchor frame (automated audio solve)
-            # Skip if we already solved reCAPTCHA (page may show stale frame)
-            has_recaptcha = False
-            recaptcha_already_checked = False
-            for frame in page.frames:
-                if 'anchor' in frame.url and 'recaptcha' in frame.url:
-                    has_recaptcha = True
-                    try:
-                        checked = await frame.evaluate(
-                            "document.getElementById('recaptcha-anchor')?.getAttribute('aria-checked') || 'false'"
-                        )
-                        if checked == 'true':
-                            recaptcha_already_checked = True
+                        if await page.get_by_role('textbox', name='Email').is_visible(timeout=2000):
+                            break
                     except Exception:
                         pass
-                    break
+                    await asyncio.sleep(2)
 
-            if has_recaptcha and not recaptcha_already_checked and not recaptcha_solved:
-                print(f"  [!] reCAPTCHA detected (round {captcha_rounds})")
-                captcha_ok = await solve_recaptcha(page)
-                if captcha_ok:
-                    recaptcha_solved = True
-                else:
-                    print("[X] reCAPTCHA failed!")
+                # Refill form with new email
+                try:
+                    email_field = page.get_by_role('textbox', name='Email')
+                    await email_field.wait_for(state='visible', timeout=10000)
+                    await email_field.fill(email)
+                    await human_delay(150, 350, fast)
+
+                    pw_field = page.get_by_role('textbox', name='Enter your new password')
+                    await pw_field.wait_for(state='visible', timeout=5000)
+                    await pw_field.fill(password)
+                    await human_delay(150, 350, fast)
+
+                    confirm_field = page.get_by_role('textbox', name='Confirm new password')
+                    await confirm_field.fill(password)
+                    await human_delay(150, 350, fast)
+
+                    await page.get_by_role('checkbox', name="I've read and agreed").click()
+                    await human_delay(300, 600, fast)
+                    print("  Form refilled with new email")
+                except Exception as e:
+                    print(f"  [!] Refill error: {e}")
                     await browser.close()
                     return None
-                await asyncio.sleep(2)
-                continue
-            elif has_recaptcha and (recaptcha_already_checked or recaptcha_solved):
-                print(f"  [✓] reCAPTCHA already solved (round {captcha_rounds}) — skipping")
-                # Don't loop forever on stale frame
-                await asyncio.sleep(2)
-                # Check one more time if Xiaomi CAPTCHA appeared
-                if await detect_xiaomi_captcha(page):
-                    continue
-                break  # No new CAPTCHA — done
 
-            # Neither detected — wait and check once more
-            if captcha_rounds <= 2:
-                await asyncio.sleep(3)
-                continue
+                continue  # Retry outer loop with new email
 
-            # Multiple rounds with no CAPTCHA — done
-            break
-
-        print(f"  CAPTCHA handling done ({captcha_rounds} round(s))")
-
-        timer.phase("CAPTCHA solve")
-
-        # Phase 4: OTP
-        print("[4] Waiting for OTP page...")
-        try:
-            await page.locator(
-                'input[type="text"], input[type="number"], input[inputmode="numeric"]'
-            ).first.wait_for(state='visible', timeout=15000)
-        except Exception:
-            await asyncio.sleep(3)
-
-        print("[5] Getting OTP...")
-        code = await wait_for_otp(page, user, domain)
+            break  # Normal flow — exit outer retry loop
 
         if not code:
             print("[X] OTP not received!")
