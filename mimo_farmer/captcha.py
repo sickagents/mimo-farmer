@@ -92,18 +92,19 @@ async def detect_xiaomi_captcha(page) -> bool:
 
 
 
-async def solve_text_captcha(page, max_retries: int = 3) -> bool:
-    """Solve Xiaomi's custom text CAPTCHA — auto ddddocr + manual fallback.
+async def solve_text_captcha(page, max_retries: int = 0) -> bool:
+    """Solve Xiaomi's custom text CAPTCHA — manual solve (user types in browser).
 
     Flow:
-    1. Try ddddocr auto-solve (up to max_retries attempts)
-       - Screenshot CAPTCHA image → OCR → type result → click Submit
-       - If popup closes → success
-       - If still showing → retry (image changes each time)
-    2. If all auto attempts fail → fallback to manual solve
+    1. Show message to user to solve CAPTCHA in browser
+    2. Poll for popup to close (auto-detect when solved)
+    3. Timeout after 120s
 
     Returns True if solved, False otherwise.
     """
+    # Skip ddddocr auto-solve — accuracy too low for this CAPTCHA type
+    # Go straight to manual solve
+    return await _solve_text_captcha_manual(page)
     # Try auto-solve with ddddocr first
     try:
         import ddddocr
@@ -134,38 +135,42 @@ async def solve_text_captcha(page, max_retries: int = 3) -> bool:
             except Exception:
                 pass
 
-            # Preprocess image: grayscale + threshold for better OCR
+            # Preprocess image for better OCR
             try:
-                from PIL import Image, ImageFilter
+                from PIL import Image
                 import io
-                img = Image.open(io.BytesIO(img_bytes))
-                # Convert to grayscale
-                img = img.convert('L')
-                # Apply threshold to make text clearer
-                img = img.point(lambda x: 0 if x < 140 else 255, '1')
-                # Convert back to bytes
+
+                img = Image.open(io.BytesIO(img_bytes)).convert('RGB')
+
+                # Light preprocessing: grayscale + moderate threshold
+                # Don't remove colored lines aggressively — raw OCR works better
+                gray = img.convert('L')
+                binary = gray.point(lambda x: 0 if x < 130 else 255, '1')
+
                 buf = io.BytesIO()
-                img.save(buf, format='PNG')
+                binary.save(buf, format='PNG')
                 preprocessed_bytes = buf.getvalue()
-                print(f"  [captcha] Preprocessed image: {img.size[0]}x{img.size[1]}")
 
-                # Try OCR on preprocessed image first
-                result_pp = ocr.classification(preprocessed_bytes).strip()
-                # Also try on original
                 result_raw = ocr.classification(img_bytes).strip()
+                result_pp = ocr.classification(preprocessed_bytes).strip()
 
-                # Pick the better result (longer, more likely correct)
-                if result_pp and len(result_pp) >= len(result_raw):
-                    result = result_pp
-                    print(f"  [captcha] Using preprocessed result: '{result}' (raw was '{result_raw}')")
-                else:
-                    result = result_raw
-                    print(f"  [captcha] Using raw result: '{result}' (preprocessed was '{result_pp}')")
+                # Pick best: prefer 4-6 char results
+                candidates = [(result_raw, 'raw'), (result_pp, 'preprocessed')]
+                def score(r):
+                    l = len(r)
+                    if l < 2: return -100
+                    if 4 <= l <= 6: return 10 + l
+                    if l == 3: return 5
+                    return l
+
+                best = max(candidates, key=lambda c: score(c[0]))
+                result = best[0]
+                print(f"  [captcha] OCR — raw:'{result_raw}' pp:'{result_pp}' → {best[1]}:'{result}'")
+
             except Exception as e:
-                # Fallback: just use raw OCR
                 result = ocr.classification(img_bytes)
                 result = result.strip()
-                print(f"  [captcha] Preprocess failed ({e}), using raw OCR")
+                print(f"  [captcha] Preprocess failed ({e}), using raw: '{result}'")
 
             if not result or len(result) < 2:
                 print(f"  [captcha] OCR returned empty/short: '{result}' (attempt {attempt})")
