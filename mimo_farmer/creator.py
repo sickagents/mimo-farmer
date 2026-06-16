@@ -29,7 +29,7 @@ from patchright.async_api import async_playwright
 
 from mimo_farmer.config import (
     DEFAULT_PASSWORD, DEFAULT_REFERRAL_CODE, SIGNUP_URL,
-    BALANCE_URL, API_KEYS_URL, LOGOUT_URL, ACCOUNTS_DIR,
+    BALANCE_URL, API_KEYS_URL, LOGOUT_URL, INVITE_URL, ACCOUNTS_DIR,
     HUMAN_DELAY_MIN_MS, HUMAN_DELAY_MAX_MS,
     FAST_DELAY_MIN_MS, FAST_DELAY_MAX_MS, FAST_MODE_MULTIPLIER,
 )
@@ -364,6 +364,121 @@ async def enter_referral(page, referral_code: str, fast: bool = False) -> bool:
     except Exception as e:
         print(f"  [!] Referral error: {e}")
         return False
+
+
+async def extract_own_referral_code(page) -> str | None:
+    """Extract this account's own referral code from the invite page.
+
+    Navigates to INVITE_URL and scrapes the 6-char referral code.
+    Falls back to API endpoint if UI scraping fails.
+
+    Returns 6-char referral code string or None.
+    """
+    print("  Extracting own referral code...")
+    own_code = None
+
+    try:
+        await page.goto(INVITE_URL, wait_until='domcontentloaded')
+        await asyncio.sleep(4)
+        await handle_dialogs(page)
+
+        # Strategy 1: Look for a copyable code element (common patterns)
+        code_selectors = [
+            # Code in a prominent display element
+            '[class*="code"] [class*="value"]',
+            '[class*="invite-code"]',
+            '[class*="referral-code"]',
+            '[class*="invite"] code',
+            '[class*="invite"] pre',
+            # Clipboard-able text
+            '[data-clipboard-text]',
+            '[class*="copy"] [class*="text"]',
+        ]
+        for sel in code_selectors:
+            try:
+                el = page.locator(sel).first
+                if await el.count() > 0:
+                    text = (await el.text_content() or '').strip()
+                    # Validate: 6 alphanumeric chars
+                    if len(text) == 6 and text.isalnum():
+                        own_code = text.upper()
+                        print(f"  [invite] Found code via selector: {own_code}")
+                        break
+            except Exception:
+                continue
+
+        # Strategy 2: Scan all visible text for 6-char alphanumeric pattern
+        if not own_code:
+            try:
+                body = await page.evaluate("document.body.innerText")
+                # Look for patterns like "Your code: ABC123" or "ABC123"
+                candidates = re.findall(r'\b([A-Z0-9]{6})\b', body.upper())
+                # Filter out common non-code strings
+                blacklist = {'INVITE', 'REFERR', 'MI MORE', 'XIAOMI', 'ACCEPT', 'CONFIRM',
+                             'SUBMIT', 'CANCEL', 'CREATE', 'DELETE', 'SEARCH', 'FILTER'}
+                for c in candidates:
+                    if c not in blacklist:
+                        own_code = c
+                        print(f"  [invite] Found code via regex scan: {own_code}")
+                        break
+            except Exception:
+                pass
+
+        # Strategy 3: Try API endpoint
+        if not own_code:
+            try:
+                api_result = await page.evaluate("""
+                    async () => {
+                        try {
+                            const urls = [
+                                '/api/v1/invitation/code',
+                                '/api/v1/invite/code',
+                                '/api/v1/user/invite-code',
+                                '/api/v1/referral/code',
+                            ];
+                            for (const url of urls) {
+                                const resp = await fetch(url, {credentials: 'include'});
+                                if (resp.ok) {
+                                    const data = await resp.json();
+                                    const text = JSON.stringify(data);
+                                    const m = text.match(/"([A-Z0-9]{6})"/i);
+                                    if (m) return m[1].toUpperCase();
+                                }
+                            }
+                        } catch (e) {}
+                        return null;
+                    }
+                """)
+                if api_result and len(api_result) == 6:
+                    own_code = api_result.upper()
+                    print(f"  [invite] Found code via API: {own_code}")
+            except Exception:
+                pass
+
+        # Strategy 4: Check clipboard (some pages auto-copy)
+        if not own_code:
+            try:
+                copy_btn = page.locator(
+                    'button:has-text("Copy"), button[aria-label*="copy" i], '
+                    '[class*="copy-btn"], [class*="copy"] button'
+                ).first
+                if await copy_btn.count() > 0:
+                    await copy_btn.click()
+                    await asyncio.sleep(1)
+                    clipboard = await page.evaluate("navigator.clipboard.readText()")
+                    if clipboard and len(clipboard.strip()) == 6 and clipboard.strip().isalnum():
+                        own_code = clipboard.strip().upper()
+                        print(f"  [invite] Found code via clipboard: {own_code}")
+            except Exception:
+                pass
+
+    except Exception as e:
+        print(f"  [!] Invite page error: {e}")
+
+    if not own_code:
+        print("  [!] Could not extract own referral code from any method")
+
+    return own_code
 
 
 async def wait_for_balance_272(page, timeout: int = 60) -> str:
@@ -763,6 +878,7 @@ async def create_account(
     password: str = DEFAULT_PASSWORD,
     fast: bool = False,
     account_num: int = 0,
+    skip_referral: bool = False,
 ) -> dict | None:
     """Full MiMo account creation pipeline.
 
@@ -1119,11 +1235,21 @@ async def create_account(
         await handle_dialogs(page, fast)
         timer.phase("Balance page + terms")
 
-        # Phase 8: Enter referral — MUST succeed before API key
-        print("[9] Entering referral code...")
-        referral_ok = await enter_referral(page, referral_code, fast)
-        await handle_dialogs(page, fast)
-        timer.phase("Referral entry")
+        # Phase 8: Enter referral OR extract own referral code (siklus mode)
+        own_referral = None
+        if skip_referral:
+            print("[9] Siklus mode — skipping referral entry, extracting own code...")
+            own_referral = await extract_own_referral_code(page)
+            if own_referral:
+                print(f"  ✓ Own referral code: {own_referral}")
+            else:
+                print("  [!] Could not extract own referral code — siklus child accounts will fail")
+            timer.phase("Referral extraction")
+        else:
+            print("[9] Entering referral code...")
+            referral_ok = await enter_referral(page, referral_code, fast)
+            await handle_dialogs(page, fast)
+            timer.phase("Referral entry")
 
         # Phase 9: Detect risk control
         print("[10] Checking for risk control...")
@@ -1138,6 +1264,7 @@ async def create_account(
                 "referral": referral_code,
                 "api_key": None,
                 "risk_control": True,
+                "own_referral": own_referral,
                 "created": time.strftime("%Y-%m-%d %H:%M:%S"),
                 "method": "cli_auto",
             }
@@ -1176,6 +1303,7 @@ async def create_account(
             "referral": referral_code,
             "api_key": api_key,
             "risk_control": risk_control,
+            "own_referral": own_referral,
             "created": time.strftime("%Y-%m-%d %H:%M:%S"),
             "method": "mimo-farmer",
         }
@@ -1189,6 +1317,8 @@ async def create_account(
             f.write(f"Password: {password}\n")
             f.write(f"Balance: {balance}\n")
             f.write(f"Referral: {referral_code}\n")
+            if own_referral:
+                f.write(f"Own Referral Code: {own_referral}\n")
             f.write(f"API Key: {api_key or 'N/A'}\n")
             f.write(f"Risk Control: {risk_control}\n")
             f.write(f"Created: {creds['created']}\n")
