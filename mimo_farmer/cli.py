@@ -481,10 +481,14 @@ def _run_siklus(siklus_count: int, fast: bool) -> int:
             main_referral = main_result.get('own_referral')
             main_email = main_result.get('email', 'N/A')
             main_balance = main_result.get('balance', 'N/A')
+            # Extract domain from main email for child accounts
+            main_domain = main_email.split('@')[1] if '@' in main_email else None
             print(f"\n  ✅ MAIN account created!")
             print(f"     Email: {main_email}")
             print(f"     Balance: {main_balance}")
             print(f"     Own Referral: {main_referral or 'FAILED TO EXTRACT'}")
+            if main_domain:
+                print(f"     Domain: {main_domain} (will reuse for children)")
 
             if not main_referral:
                 print(f"  [!] No referral code extracted — cannot create child accounts.")
@@ -519,6 +523,7 @@ def _run_siklus(siklus_count: int, fast: bool) -> int:
                         referral_code=main_referral,
                         fast=fast,
                         account_num=child_num,
+                        preferred_domain=main_domain,
                     ))
                 except Exception as e:
                     print(f"  [!] Child {c} error: {e}")

@@ -20,6 +20,7 @@ CRITICAL patterns preserved:
 import asyncio
 import json
 import os
+import random
 import re
 import secrets
 import string
@@ -887,6 +888,7 @@ async def create_account(
     fast: bool = False,
     account_num: int = 0,
     skip_referral: bool = False,
+    preferred_domain: str = None,
 ) -> dict | None:
     """Full MiMo account creation pipeline.
 
@@ -911,6 +913,7 @@ async def create_account(
         referral_code: 6-char MiMo referral code
         password: Account password
         fast: Enable fast mode (reduced delays)
+        preferred_domain: If set, use this domain for email (e.g. from main account in siklus mode)
 
     Returns:
         Dict with credentials or None on failure
@@ -927,6 +930,17 @@ async def create_account(
 
     # Fetch available domains from generator.email (once per session)
     available_domains = get_available_domains()
+
+    # If preferred_domain set (siklus mode), filter to that domain only
+    if preferred_domain:
+        if preferred_domain in available_domains:
+            available_domains = [preferred_domain]
+        else:
+            # Domain might not be in current list — still try it
+            available_domains = [preferred_domain]
+        # Re-generate email with preferred domain
+        email, user, domain = random_email(available_domains)
+
     email_retries = 0
     MAX_EMAIL_RETRIES = 5
 
