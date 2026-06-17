@@ -2,13 +2,18 @@
 
 Provides:
 1. Random User-Agent, viewport, timezone, locale per session
-2. Canvas/WebGL noise injection via JS
-3. Navigator.plugins/languages randomization
-4. DeviceId cookie clearing
-5. Human-like mouse movement (bezier curves)
-6. Variable typing speed per character
+2. Canvas noise injection — SEEDDED deterministic per profile (consistent hash)
+3. WebGL full parameter spoofing (not just vendor/renderer)
+4. Navigator.plugins/languages randomization (Chrome 127+ aware)
+5. hardwareConcurrency / deviceMemory override per profile
+6. AudioContext fingerprint evasion (deterministic buffer spoofing)
+7. DeviceId cookie clearing
+8. Human-like mouse movement (bezier curves)
+9. Variable typing speed per character
 """
 
+import hashlib
+import json as _json
 import math
 import random
 import string
@@ -47,8 +52,123 @@ VIEWPORTS = [
 # Fingerprint Profiles — consistent UA + timezone + locale
 # ─────────────────────────────────────────────────────────────
 
-# Each profile: (UA, timezone, locale, webgl_vendor, webgl_renderer)
+# Each profile: (UA, timezone, locale, webgl_vendor, webgl_renderer,
+#                hardware_concurrency, device_memory, chrome_version, gpu_params)
 # OS-region matched so Google doesn't flag mismatched fingerprints
+#
+# chrome_version: Used to determine if plugins should be spoofed (Chrome 127+ = empty)
+# hardware_concurrency: navigator.hardwareConcurrency (CPU logical cores)
+# device_memory: navigator.deviceMemory (GB)
+# gpu_params: dict of WebGL parameter overrides matching the claimed GPU
+
+def _gpu_params_nvidia_gtx1650():
+    """WebGL params matching NVIDIA GeForce GTX 1650 (Direct3D11)."""
+    return {
+        "MAX_TEXTURE_SIZE": 16384,
+        "MAX_VIEWPORT_DIMS": [16384, 16384],
+        "MAX_RENDERBUFFER_SIZE": 16384,
+        "ALIASED_LINE_WIDTH_RANGE": [1, 1],
+        "ALIASED_POINT_SIZE_RANGE": [1, 1024],
+        "MAX_VERTEX_ATTRIBS": 16,
+        "MAX_VERTEX_UNIFORM_VECTORS": 4096,
+        "MAX_VARYING_VECTORS": 30,
+        "MAX_VERTEX_TEXTURE_IMAGE_UNITS": 16,
+        "MAX_TEXTURE_IMAGE_UNITS": 16,
+        "MAX_FRAGMENT_UNIFORM_VECTORS": 1024,
+        "MAX_COMBINED_TEXTURE_IMAGE_UNITS": 32,
+        "MAX_CUBE_MAP_TEXTURE_SIZE": 16384,
+    }
+
+def _gpu_params_nvidia_rtx3060():
+    """WebGL params matching NVIDIA GeForce RTX 3060 (Direct3D11)."""
+    return {
+        "MAX_TEXTURE_SIZE": 32768,
+        "MAX_VIEWPORT_DIMS": [32768, 32768],
+        "MAX_RENDERBUFFER_SIZE": 32768,
+        "ALIASED_LINE_WIDTH_RANGE": [1, 1],
+        "ALIASED_POINT_SIZE_RANGE": [1, 1024],
+        "MAX_VERTEX_ATTRIBS": 16,
+        "MAX_VERTEX_UNIFORM_VECTORS": 4096,
+        "MAX_VARYING_VECTORS": 30,
+        "MAX_VERTEX_TEXTURE_IMAGE_UNITS": 16,
+        "MAX_TEXTURE_IMAGE_UNITS": 16,
+        "MAX_FRAGMENT_UNIFORM_VECTORS": 1024,
+        "MAX_COMBINED_TEXTURE_IMAGE_UNITS": 32,
+        "MAX_CUBE_MAP_TEXTURE_SIZE": 32768,
+    }
+
+def _gpu_params_intel_uhd():
+    """WebGL params matching Intel UHD Graphics (Direct3D11)."""
+    return {
+        "MAX_TEXTURE_SIZE": 16384,
+        "MAX_VIEWPORT_DIMS": [16384, 16384],
+        "MAX_RENDERBUFFER_SIZE": 16384,
+        "ALIASED_LINE_WIDTH_RANGE": [1, 1],
+        "ALIASED_POINT_SIZE_RANGE": [1, 256],
+        "MAX_VERTEX_ATTRIBS": 16,
+        "MAX_VERTEX_UNIFORM_VECTORS": 4096,
+        "MAX_VARYING_VECTORS": 30,
+        "MAX_VERTEX_TEXTURE_IMAGE_UNITS": 16,
+        "MAX_TEXTURE_IMAGE_UNITS": 16,
+        "MAX_FRAGMENT_UNIFORM_VECTORS": 1024,
+        "MAX_COMBINED_TEXTURE_IMAGE_UNITS": 32,
+        "MAX_CUBE_MAP_TEXTURE_SIZE": 16384,
+    }
+
+def _gpu_params_nvidia_gtx1050ti():
+    """WebGL params matching NVIDIA GeForce GTX 1050 Ti (Direct3D11)."""
+    return {
+        "MAX_TEXTURE_SIZE": 16384,
+        "MAX_VIEWPORT_DIMS": [16384, 16384],
+        "MAX_RENDERBUFFER_SIZE": 16384,
+        "ALIASED_LINE_WIDTH_RANGE": [1, 1],
+        "ALIASED_POINT_SIZE_RANGE": [1, 1024],
+        "MAX_VERTEX_ATTRIBS": 16,
+        "MAX_VERTEX_UNIFORM_VECTORS": 4096,
+        "MAX_VARYING_VECTORS": 30,
+        "MAX_VERTEX_TEXTURE_IMAGE_UNITS": 16,
+        "MAX_TEXTURE_IMAGE_UNITS": 16,
+        "MAX_FRAGMENT_UNIFORM_VECTORS": 1024,
+        "MAX_COMBINED_TEXTURE_IMAGE_UNITS": 32,
+        "MAX_CUBE_MAP_TEXTURE_SIZE": 16384,
+    }
+
+def _gpu_params_amd_rx580():
+    """WebGL params matching AMD Radeon RX 580 (Direct3D11)."""
+    return {
+        "MAX_TEXTURE_SIZE": 16384,
+        "MAX_VIEWPORT_DIMS": [16384, 16384],
+        "MAX_RENDERBUFFER_SIZE": 16384,
+        "ALIASED_LINE_WIDTH_RANGE": [1, 1],
+        "ALIASED_POINT_SIZE_RANGE": [1, 1024],
+        "MAX_VERTEX_ATTRIBS": 16,
+        "MAX_VERTEX_UNIFORM_VECTORS": 4096,
+        "MAX_VARYING_VECTORS": 30,
+        "MAX_VERTEX_TEXTURE_IMAGE_UNITS": 16,
+        "MAX_TEXTURE_IMAGE_UNITS": 16,
+        "MAX_FRAGMENT_UNIFORM_VECTORS": 1024,
+        "MAX_COMBINED_TEXTURE_IMAGE_UNITS": 32,
+        "MAX_CUBE_MAP_TEXTURE_SIZE": 16384,
+    }
+
+def _gpu_params_apple():
+    """WebGL params matching Apple GPU (Metal)."""
+    return {
+        "MAX_TEXTURE_SIZE": 16384,
+        "MAX_VIEWPORT_DIMS": [16384, 16384],
+        "MAX_RENDERBUFFER_SIZE": 16384,
+        "ALIASED_LINE_WIDTH_RANGE": [1, 1],
+        "ALIASED_POINT_SIZE_RANGE": [1, 511],
+        "MAX_VERTEX_ATTRIBS": 16,
+        "MAX_VERTEX_UNIFORM_VECTORS": 4096,
+        "MAX_VARYING_VECTORS": 30,
+        "MAX_VERTEX_TEXTURE_IMAGE_UNITS": 16,
+        "MAX_TEXTURE_IMAGE_UNITS": 16,
+        "MAX_FRAGMENT_UNIFORM_VECTORS": 1024,
+        "MAX_COMBINED_TEXTURE_IMAGE_UNITS": 32,
+        "MAX_CUBE_MAP_TEXTURE_SIZE": 16384,
+    }
+
 FINGERPRINT_PROFILES = [
     # Windows US
     {
@@ -57,6 +177,10 @@ FINGERPRINT_PROFILES = [
         "locale": "en-US",
         "webgl_vendor": "Google Inc. (NVIDIA)",
         "webgl_renderer": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1650 Direct3D11 vs_5_0 ps_5_0)",
+        "hardware_concurrency": 8,
+        "device_memory": 8,
+        "chrome_version": 131,
+        "gpu_params_fn": _gpu_params_nvidia_gtx1650,
     },
     {
         "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
@@ -64,6 +188,10 @@ FINGERPRINT_PROFILES = [
         "locale": "en-US",
         "webgl_vendor": "Google Inc. (NVIDIA)",
         "webgl_renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0)",
+        "hardware_concurrency": 16,
+        "device_memory": 16,
+        "chrome_version": 130,
+        "gpu_params_fn": _gpu_params_nvidia_rtx3060,
     },
     {
         "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
@@ -71,6 +199,10 @@ FINGERPRINT_PROFILES = [
         "locale": "en-US",
         "webgl_vendor": "Google Inc. (Intel)",
         "webgl_renderer": "ANGLE (Intel, Intel(R) UHD Graphics Direct3D11 vs_5_0 ps_5_0)",
+        "hardware_concurrency": 8,
+        "device_memory": 8,
+        "chrome_version": 129,
+        "gpu_params_fn": _gpu_params_intel_uhd,
     },
     {
         "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
@@ -78,6 +210,10 @@ FINGERPRINT_PROFILES = [
         "locale": "en-GB",
         "webgl_vendor": "Google Inc. (NVIDIA)",
         "webgl_renderer": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1050 Ti Direct3D11 vs_5_0 ps_5_0)",
+        "hardware_concurrency": 8,
+        "device_memory": 8,
+        "chrome_version": 128,
+        "gpu_params_fn": _gpu_params_nvidia_gtx1050ti,
     },
     {
         "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
@@ -85,6 +221,10 @@ FINGERPRINT_PROFILES = [
         "locale": "en-US",
         "webgl_vendor": "Google Inc. (AMD)",
         "webgl_renderer": "ANGLE (AMD, AMD Radeon RX 580 Direct3D11 vs_5_0 ps_5_0)",
+        "hardware_concurrency": 12,
+        "device_memory": 16,
+        "chrome_version": 131,
+        "gpu_params_fn": _gpu_params_amd_rx580,
     },
     # macOS US
     {
@@ -93,6 +233,10 @@ FINGERPRINT_PROFILES = [
         "locale": "en-US",
         "webgl_vendor": "Apple",
         "webgl_renderer": "Apple GPU",
+        "hardware_concurrency": 10,
+        "device_memory": 16,
+        "chrome_version": 131,
+        "gpu_params_fn": _gpu_params_apple,
     },
     {
         "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
@@ -100,6 +244,10 @@ FINGERPRINT_PROFILES = [
         "locale": "en-US",
         "webgl_vendor": "Apple",
         "webgl_renderer": "Apple GPU",
+        "hardware_concurrency": 8,
+        "device_memory": 8,
+        "chrome_version": 130,
+        "gpu_params_fn": _gpu_params_apple,
     },
     # Windows AU
     {
@@ -108,6 +256,10 @@ FINGERPRINT_PROFILES = [
         "locale": "en-AU",
         "webgl_vendor": "Google Inc. (NVIDIA)",
         "webgl_renderer": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1650 Direct3D11 vs_5_0 ps_5_0)",
+        "hardware_concurrency": 8,
+        "device_memory": 8,
+        "chrome_version": 127,
+        "gpu_params_fn": _gpu_params_nvidia_gtx1650,
     },
     # Linux US
     {
@@ -116,6 +268,10 @@ FINGERPRINT_PROFILES = [
         "locale": "en-US",
         "webgl_vendor": "Google Inc. (NVIDIA)",
         "webgl_renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0)",
+        "hardware_concurrency": 16,
+        "device_memory": 32,
+        "chrome_version": 131,
+        "gpu_params_fn": _gpu_params_nvidia_rtx3060,
     },
     # Windows ID (for Indonesian IP)
     {
@@ -124,6 +280,10 @@ FINGERPRINT_PROFILES = [
         "locale": "id-ID",
         "webgl_vendor": "Google Inc. (NVIDIA)",
         "webgl_renderer": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1650 Direct3D11 vs_5_0 ps_5_0)",
+        "hardware_concurrency": 8,
+        "device_memory": 8,
+        "chrome_version": 131,
+        "gpu_params_fn": _gpu_params_nvidia_gtx1650,
     },
     # Windows SG
     {
@@ -132,6 +292,10 @@ FINGERPRINT_PROFILES = [
         "locale": "en-US",
         "webgl_vendor": "Google Inc. (Intel)",
         "webgl_renderer": "ANGLE (Intel, Intel(R) UHD Graphics Direct3D11 vs_5_0 ps_5_0)",
+        "hardware_concurrency": 8,
+        "device_memory": 8,
+        "chrome_version": 130,
+        "gpu_params_fn": _gpu_params_intel_uhd,
     },
 ]
 
@@ -139,11 +303,16 @@ FINGERPRINT_PROFILES = [
 def random_fingerprint() -> dict:
     """Generate random but CONSISTENT browser fingerprint settings.
 
-    UA, timezone, locale, WebGL vendor/renderer are matched per profile
+    UA, timezone, locale, WebGL vendor/renderer, hardware_concurrency,
+    device_memory, chrome_version, and gpu_params are matched per profile
     so Google doesn't flag mismatched fingerprints (e.g., Mac + Jakarta timezone).
     """
     profile = random.choice(FINGERPRINT_PROFILES)
     viewport = random.choice(VIEWPORTS)
+    # Derive a deterministic canvas seed from profile identity
+    canvas_seed = int(hashlib.sha256(
+        (profile["ua"] + profile["timezone"] + profile["webgl_renderer"]).encode()
+    ).hexdigest()[:8], 16)
     return {
         "user_agent": profile["ua"],
         "viewport": viewport,
@@ -151,57 +320,102 @@ def random_fingerprint() -> dict:
         "locale": profile["locale"],
         "webgl_vendor": profile["webgl_vendor"],
         "webgl_renderer": profile["webgl_renderer"],
+        "hardware_concurrency": profile["hardware_concurrency"],
+        "device_memory": profile["device_memory"],
+        "chrome_version": profile["chrome_version"],
+        "gpu_params": profile["gpu_params_fn"](),
+        "canvas_seed": canvas_seed,
     }
 
 
 # ─────────────────────────────────────────────────────────────
 # Stealth JS — injected before every page load
+# Placeholders replaced at injection time from fingerprint profile
 # ─────────────────────────────────────────────────────────────
 
 STEALTH_JS = """
 (() => {
-    // 1. Override navigator.webdriver → false
+    // ── 0. Seeded PRNG for deterministic noise (canvas, audio) ──
+    // Uses mulberry32 — fast, 32-bit, deterministic from seed
+    function __seeded_rng(seed) {
+        return function() {
+            seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+            let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+            t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+            return ((t ^ t >>> 14) >>> 0) / 4294967296;
+        };
+    }
+    const __rng = __seeded_rng(__CANVAS_SEED__);
+    // Reset RNG before each canvas draw for consistency
+    let __canvasRng = __rng;
+
+    // ── 1. navigator.webdriver → false ──
     Object.defineProperty(navigator, 'webdriver', {
         get: () => false,
         configurable: true,
     });
 
-    // 2. Override navigator.plugins (fake non-empty plugin list)
-    const fakePlugins = [
-        { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
-        { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '' },
-        { name: 'Native Client', filename: 'internal-nacl-plugin', description: '' },
-    ];
-    Object.defineProperty(navigator, 'plugins', {
-        get: () => {
-            const list = fakePlugins;
-            list.length = fakePlugins.length;
-            list.item = (i) => fakePlugins[i] || null;
-            list.namedItem = (name) => fakePlugins.find(p => p.name === name) || null;
-            list.refresh = () => {};
-            return list;
-        },
-        configurable: true,
-    });
+    // ── 2. navigator.plugins (Chrome 127+ version-aware) ──
+    // Chrome 127+ deprecated plugins → empty array.
+    // Spoofing non-empty on 127+ = over-spoof detection.
+    const __chromeVersion = __CHROME_VERSION__;
+    if (__chromeVersion < 127) {
+        // Pre-127: fake non-empty plugin list
+        const fakePlugins = [
+            { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
+            { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '' },
+            { name: 'Native Client', filename: 'internal-nacl-plugin', description: '' },
+        ];
+        Object.defineProperty(navigator, 'plugins', {
+            get: () => {
+                const list = fakePlugins;
+                list.length = fakePlugins.length;
+                list.item = (i) => fakePlugins[i] || null;
+                list.namedItem = (name) => fakePlugins.find(p => p.name === name) || null;
+                list.refresh = () => {};
+                return list;
+            },
+            configurable: true,
+        });
+    }
+    // Chrome 127+ → leave plugins as-is (empty array, correct behavior)
 
-    // 3. Override navigator.languages
+    // ── 3. navigator.languages ──
     Object.defineProperty(navigator, 'languages', {
-        get: () => ['en-US', 'en'],
+        get: () => __LOCALE__,
         configurable: true,
     });
 
-    // 4. Canvas noise injection (subtle — adds ~1-3px noise per draw)
+    // ── 4. navigator.hardwareConcurrency ──
+    Object.defineProperty(navigator, 'hardwareConcurrency', {
+        get: () => __HW_CONCURRENCY__,
+        configurable: true,
+    });
+
+    // ── 5. navigator.deviceMemory ──
+    Object.defineProperty(navigator, 'deviceMemory', {
+        get: () => __DEVICE_MEMORY__,
+        configurable: true,
+    });
+
+    // ── 6. Canvas noise — SEEDED deterministic per profile ──
+    // Same profile always produces same canvas hash.
+    // Anti-bot detects random noise because hash changes between calls.
+    // Seeded noise = same browser, same modified pixels, same hash.
     const origToDataURL = HTMLCanvasElement.prototype.toDataURL;
     HTMLCanvasElement.prototype.toDataURL = function(type, quality) {
         const ctx = this.getContext('2d');
         if (ctx) {
+            // Reset PRNG so same seed → same noise pattern
+            __canvasRng = __seeded_rng(__CANVAS_SEED__);
             const imageData = ctx.getImageData(0, 0, this.width, this.height);
             const data = imageData.data;
-            // Add subtle noise to a random subset of pixels
-            for (let i = 0; i < data.length; i += 4 * Math.floor(Math.random() * 100 + 50)) {
-                data[i] = data[i] ^ (Math.random() > 0.5 ? 1 : 0);     // R
-                data[i+1] = data[i+1] ^ (Math.random() > 0.5 ? 1 : 0); // G
-                data[i+2] = data[i+2] ^ (Math.random() > 0.5 ? 1 : 0); // B
+            // Deterministic: pick pixels and noise values from seeded RNG
+            const step = Math.floor(__canvasRng() * 80) + 50; // 50-130
+            for (let i = 0; i < data.length; i += 4 * step) {
+                data[i]   = data[i]   ^ (__canvasRng() > 0.5 ? 1 : 0);   // R
+                data[i+1] = data[i+1] ^ (__canvasRng() > 0.5 ? 1 : 0);   // G
+                data[i+2] = data[i+2] ^ (__canvasRng() > 0.5 ? 1 : 0);   // B
             }
             ctx.putImageData(imageData, 0, 0);
         }
@@ -212,32 +426,94 @@ STEALTH_JS = """
     HTMLCanvasElement.prototype.toBlob = function(callback, type, quality) {
         const ctx = this.getContext('2d');
         if (ctx) {
+            __canvasRng = __seeded_rng(__CANVAS_SEED__);
             const imageData = ctx.getImageData(0, 0, this.width, this.height);
             const data = imageData.data;
-            for (let i = 0; i < data.length; i += 4 * Math.floor(Math.random() * 100 + 50)) {
-                data[i] = data[i] ^ (Math.random() > 0.5 ? 1 : 0);
-                data[i+1] = data[i+1] ^ (Math.random() > 0.5 ? 1 : 0);
-                data[i+2] = data[i+2] ^ (Math.random() > 0.5 ? 1 : 0);
+            const step = Math.floor(__canvasRng() * 80) + 50;
+            for (let i = 0; i < data.length; i += 4 * step) {
+                data[i]   = data[i]   ^ (__canvasRng() > 0.5 ? 1 : 0);
+                data[i+1] = data[i+1] ^ (__canvasRng() > 0.5 ? 1 : 0);
+                data[i+2] = data[i+2] ^ (__canvasRng() > 0.5 ? 1 : 0);
             }
             ctx.putImageData(imageData, 0, 0);
         }
         return origToBlob.call(this, callback, type, quality);
     };
 
-    // 5. WebGL noise — override getParameter for vendor/renderer
-    // These values are injected dynamically from the fingerprint profile
+    // ── 7. WebGL full parameter spoofing ──
+    // Not just vendor/renderer — spoof all GL parameters to match claimed GPU.
+    // Anti-bot cross-checks MAX_TEXTURE_SIZE etc. against renderer string.
     const __WEBGL_VENDOR__ = 'VENDOR_PLACEHOLDER';
     const __WEBGL_RENDERER__ = 'RENDERER_PLACEHOLDER';
+    const __GPU_PARAMS__ = GPU_PARAMS_PLACEHOLDER;
+
+    // GL constant → param name mapping
+    const __GL_CONSTANTS = {
+        0x0D33: 'MAX_TEXTURE_SIZE',
+        0x0D3A: 'MAX_VIEWPORT_DIMS',
+        0x84E8: 'MAX_RENDERBUFFER_SIZE',
+        0x846D: 'ALIASED_LINE_WIDTH_RANGE',
+        0x8460: 'ALIASED_POINT_SIZE_RANGE',
+        0x8869: 'MAX_VERTEX_ATTRIBS',
+        0x8DFB: 'MAX_VERTEX_UNIFORM_VECTORS',
+        0x8DFC: 'MAX_VARYING_VECTORS',
+        0x8B4C: 'MAX_VERTEX_TEXTURE_IMAGE_UNITS',
+        0x8872: 'MAX_TEXTURE_IMAGE_UNITS',
+        0x8DFD: 'MAX_FRAGMENT_UNIFORM_VECTORS',
+        0x8B4D: 'MAX_COMBINED_TEXTURE_IMAGE_UNITS',
+        0x851C: 'MAX_CUBE_MAP_TEXTURE_SIZE',
+    };
+
     const getParam = WebGLRenderingContext.prototype.getParameter;
     WebGLRenderingContext.prototype.getParameter = function(param) {
-        // UNMASKED_VENDOR_WEBGL
+        // Vendor/renderer
         if (param === 0x9245) return __WEBGL_VENDOR__;
-        // UNMASKED_RENDERER_WEBGL
         if (param === 0x9246) return __WEBGL_RENDERER__;
+        // Full GPU params spoofing
+        const name = __GL_CONSTANTS[param];
+        if (name && __GPU_PARAMS__[name] !== undefined) {
+            return __GPU_PARAMS__[name];
+        }
         return getParam.call(this, param);
     };
 
-    // 6. Override chrome.runtime (headless detection)
+    // Also override WebGL2 if available
+    if (typeof WebGL2RenderingContext !== 'undefined') {
+        const getParam2 = WebGL2RenderingContext.prototype.getParameter;
+        WebGL2RenderingContext.prototype.getParameter = function(param) {
+            if (param === 0x9245) return __WEBGL_VENDOR__;
+            if (param === 0x9246) return __WEBGL_RENDERER__;
+            const name = __GL_CONSTANTS[param];
+            if (name && __GPU_PARAMS__[name] !== undefined) {
+                return __GPU_PARAMS__[name];
+            }
+            return getParam2.call(this, param);
+        };
+    }
+
+    // ── 8. AudioContext fingerprint evasion ──
+    // Headless Chrome produces different audio output than real Chrome.
+    // Deterministic buffer spoofing: same seed → same audio hash.
+    // Intercepts OfflineAudioContext.startRendering to return consistent buffer.
+    if (window.OfflineAudioContext) {
+        const origStartRendering = OfflineAudioContext.prototype.startRendering;
+        OfflineAudioContext.prototype.startRendering = function() {
+            return origStartRendering.call(this).then(buffer => {
+                // Add deterministic micro-noise to channel data
+                const audioRng = __seeded_rng(__CANVAS_SEED__ + 777);
+                for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+                    const data = buffer.getChannelData(ch);
+                    // Modify ~0.1% of samples with tiny noise
+                    for (let i = 0; i < data.length; i += Math.floor(audioRng() * 1000) + 500) {
+                        data[i] += (audioRng() - 0.5) * 1e-7; // imperceptible noise
+                    }
+                }
+                return buffer;
+            });
+        };
+    }
+
+    // ── 9. chrome.runtime (headless detection) ──
     if (!window.chrome) window.chrome = {};
     if (!window.chrome.runtime) {
         window.chrome.runtime = {
@@ -246,7 +522,7 @@ STEALTH_JS = """
         };
     }
 
-    // 7. Override permissions query (notification permission)
+    // ── 10. Permissions API (notification) ──
     const origQuery = window.navigator.permissions?.query;
     if (origQuery) {
         window.navigator.permissions.query = (params) => {
@@ -257,7 +533,7 @@ STEALTH_JS = """
         };
     }
 
-    // 8. Consistent screen dimensions with viewport
+    // ── 11. Screen dimensions ──
     Object.defineProperty(screen, 'availWidth', { get: () => window.innerWidth });
     Object.defineProperty(screen, 'availHeight', { get: () => window.innerHeight });
 })();
@@ -404,15 +680,32 @@ async def apply_stealth(context, page, fingerprint: dict = None):
 
     Args:
         fingerprint: Optional fingerprint dict from random_fingerprint().
-                     If provided, WebGL vendor/renderer are set to match the profile.
+                     If provided, WebGL vendor/renderer, canvas seed,
+                     hardware_concurrency, device_memory, chrome_version,
+                     gpu_params, and locale are set to match the profile.
     """
-    # Replace WebGL placeholders with profile-specific values
     js = STEALTH_JS
     if fingerprint:
         vendor = fingerprint.get("webgl_vendor", "Google Inc. (NVIDIA)")
         renderer = fingerprint.get("webgl_renderer", "ANGLE (NVIDIA, NVIDIA GeForce GTX 1650 Direct3D11 vs_5_0 ps_5_0)")
+        canvas_seed = fingerprint.get("canvas_seed", 12345)
+        hw_concurrency = fingerprint.get("hardware_concurrency", 8)
+        device_memory = fingerprint.get("device_memory", 8)
+        chrome_version = fingerprint.get("chrome_version", 131)
+        gpu_params = fingerprint.get("gpu_params", {})
+        locale = fingerprint.get("locale", "en-US")
+        # Build locale array: en-US → ['en-US', 'en']
+        lang_base = locale.split("-")[0]
+        locale_arr = f"['{locale}', '{lang_base}']"
+
         js = js.replace("'VENDOR_PLACEHOLDER'", repr(vendor))
         js = js.replace("'RENDERER_PLACEHOLDER'", repr(renderer))
+        js = js.replace("GPU_PARAMS_PLACEHOLDER", _json.dumps(gpu_params))
+        js = js.replace("__CANVAS_SEED__", str(canvas_seed))
+        js = js.replace("__HW_CONCURRENCY__", str(hw_concurrency))
+        js = js.replace("__DEVICE_MEMORY__", str(device_memory))
+        js = js.replace("__CHROME_VERSION__", str(chrome_version))
+        js = js.replace("__LOCALE__", locale_arr)
 
     # Inject stealth JS before every page load
     await context.add_init_script(js)
