@@ -1111,6 +1111,10 @@ async def create_account(
 
                 if email_rejected and email_retries < MAX_EMAIL_RETRIES:
                     email_retries += 1
+                    # If preferred domain was set but rejected, fallback to all domains
+                    if preferred_domain and len(available_domains) == 1:
+                        print(f"  [!] Preferred domain '{preferred_domain}' rejected — falling back to random domains")
+                        available_domains = get_available_domains()
                     print(f"  [!] Email rejected ({email_rejected}) — trying new domain (attempt {email_retries}/{MAX_EMAIL_RETRIES})")
                     email, user, domain = random_email(available_domains)
                     print(f"  [email] New email: {email}")
@@ -1265,6 +1269,10 @@ async def create_account(
             # Handle "not safe" email — retry with new email
             if code == "__UNSAFE__":
                 email_signup_attempt += 1
+                # If preferred domain was set but rejected, fallback to all domains
+                if preferred_domain and len(available_domains) == 1:
+                    print(f"  [!] Preferred domain '{preferred_domain}' rejected — falling back to random domains")
+                    available_domains = get_available_domains()
                 print(f"  [!] Unsafe email — retrying signup with new email (attempt {email_signup_attempt})")
                 email, user, domain = random_email(available_domains)
                 print(f"  [email] New email: {email}")
