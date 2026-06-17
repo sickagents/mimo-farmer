@@ -181,6 +181,7 @@ FINGERPRINT_PROFILES = [
         "device_memory": 8,
         "chrome_version": 131,
         "gpu_params_fn": _gpu_params_nvidia_gtx1650,
+        "platform": "Windows",
     },
     {
         "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
@@ -192,6 +193,7 @@ FINGERPRINT_PROFILES = [
         "device_memory": 16,
         "chrome_version": 130,
         "gpu_params_fn": _gpu_params_nvidia_rtx3060,
+        "platform": "Windows",
     },
     {
         "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
@@ -203,6 +205,7 @@ FINGERPRINT_PROFILES = [
         "device_memory": 8,
         "chrome_version": 129,
         "gpu_params_fn": _gpu_params_intel_uhd,
+        "platform": "Windows",
     },
     {
         "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
@@ -214,6 +217,7 @@ FINGERPRINT_PROFILES = [
         "device_memory": 8,
         "chrome_version": 128,
         "gpu_params_fn": _gpu_params_nvidia_gtx1050ti,
+        "platform": "Windows",
     },
     {
         "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
@@ -225,6 +229,7 @@ FINGERPRINT_PROFILES = [
         "device_memory": 16,
         "chrome_version": 131,
         "gpu_params_fn": _gpu_params_amd_rx580,
+        "platform": "Windows",
     },
     # macOS US
     {
@@ -237,6 +242,7 @@ FINGERPRINT_PROFILES = [
         "device_memory": 16,
         "chrome_version": 131,
         "gpu_params_fn": _gpu_params_apple,
+        "platform": "macOS",
     },
     {
         "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
@@ -248,6 +254,7 @@ FINGERPRINT_PROFILES = [
         "device_memory": 8,
         "chrome_version": 130,
         "gpu_params_fn": _gpu_params_apple,
+        "platform": "macOS",
     },
     # Windows AU
     {
@@ -260,6 +267,7 @@ FINGERPRINT_PROFILES = [
         "device_memory": 8,
         "chrome_version": 127,
         "gpu_params_fn": _gpu_params_nvidia_gtx1650,
+        "platform": "Windows",
     },
     # Linux US
     {
@@ -272,6 +280,7 @@ FINGERPRINT_PROFILES = [
         "device_memory": 32,
         "chrome_version": 131,
         "gpu_params_fn": _gpu_params_nvidia_rtx3060,
+        "platform": "Linux",
     },
     # Windows ID (for Indonesian IP)
     {
@@ -284,6 +293,7 @@ FINGERPRINT_PROFILES = [
         "device_memory": 8,
         "chrome_version": 131,
         "gpu_params_fn": _gpu_params_nvidia_gtx1650,
+        "platform": "Windows",
     },
     # Windows SG
     {
@@ -296,6 +306,7 @@ FINGERPRINT_PROFILES = [
         "device_memory": 8,
         "chrome_version": 130,
         "gpu_params_fn": _gpu_params_intel_uhd,
+        "platform": "Windows",
     },
 ]
 
@@ -325,6 +336,7 @@ def random_fingerprint() -> dict:
         "chrome_version": profile["chrome_version"],
         "gpu_params": profile["gpu_params_fn"](),
         "canvas_seed": canvas_seed,
+        "platform": profile["platform"],
     }
 
 
@@ -536,6 +548,74 @@ STEALTH_JS = """
     // ── 11. Screen dimensions ──
     Object.defineProperty(screen, 'availWidth', { get: () => window.innerWidth });
     Object.defineProperty(screen, 'availHeight', { get: () => window.innerHeight });
+
+    // ── 12. Font fingerprint evasion ──
+    // Anti-bot enumerates installed fonts via CSS measurement.
+    // Windows has Segoe UI, Tahoma, Consolas, etc.
+    // macOS has San Francisco, Helvetica Neue, Avenir, Menlo, etc.
+    // If we spoof Mac but have Windows fonts = detected.
+    // Override document.fonts API to filter fonts by claimed platform.
+    const __PLATFORM__ = '__PLATFORM_VAL__';
+    const __PLATFORM_FONTS__ = {
+        'Windows': new Set([
+            'Arial', 'Arial Black', 'Calibri', 'Cambria', 'Candara', 'Comic Sans MS',
+            'Consolas', 'Constantia', 'Corbel', 'Courier New', 'Georgia', 'Impact',
+            'Lucida Console', 'Lucida Sans Unicode', 'Microsoft Sans Serif', 'Palatino Linotype',
+            'Segoe UI', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Tahoma', 'Times New Roman',
+            'Trebuchet MS', 'Verdana', 'Wingdings',
+        ]),
+        'macOS': new Set([
+            'American Typewriter', 'Apple Chancery', 'Arial', 'Arial Black', 'Avenir',
+            'Avenir Next', 'Baskerville', 'Big Caslon', 'Brush Script MT', 'Chalkboard',
+            'Cochin', 'Comic Sans MS', 'Copperplate', 'Courier New', 'Didot',
+            'Futura', 'Geneva', 'Georgia', 'Gill Sans', 'Helvetica', 'Helvetica Neue',
+            'Hoefler Text', 'Impact', 'Lucida Grande', 'Marker Felt', 'Menlo',
+            'Monaco', 'Optima', 'Palatino', 'Papyrus', 'Phosphate', 'Rockwell',
+            'SF Pro', 'Skia', 'Times New Roman', 'Trebuchet MS', 'Verdana',
+        ]),
+        'Linux': new Set([
+            'Arial', 'Bitstream Charter', 'Century Schoolbook L', 'Comic Sans MS',
+            'Courier New', 'DejaVu Sans', 'DejaVu Sans Mono', 'DejaVu Serif',
+            'Droid Sans', 'FreeMono', 'FreeSans', 'FreeSerif', 'Garuda',
+            'Georgia', 'Impact', 'Liberation Mono', 'Liberation Sans', 'Liberation Serif',
+            'Linux Biolinum', 'Linux Libertine', 'Loma', 'Noto Sans', 'Noto Serif',
+            'Noto Sans CJK', 'OpenSymbol', 'Oxygen-Sans', 'Roboto', 'Symbol',
+            'Times New Roman', 'Trebuchet MS', 'Ubuntu', 'Verdana',
+        ]),
+    };
+    const __allowedFonts = __PLATFORM_FONTS__[__PLATFORM__] || __PLATFORM_FONTS__['Windows'];
+
+    // Override document.fonts.values() / entries() / forEach() / keys()
+    const origFontsValues = Document.prototype.fonts;
+    if (origFontsValues) {
+        const filterFontSet = (fontSet) => {
+            try {
+                const filtered = [];
+                fontSet.forEach(f => {
+                    if (__allowedFonts.has(f.family.replace(/["']/g, ''))) {
+                        filtered.push(f);
+                    }
+                });
+                return filtered;
+            } catch(e) { return Array.from(fontSet); }
+        };
+
+        // Override the FontFaceSet iteration
+        const origForEach = FontFaceSet.prototype.forEach;
+        FontFaceSet.prototype.forEach = function(callback, thisArg) {
+            return origForEach.call(this, function(value, key, set) {
+                if (__allowedFonts.has(value.family.replace(/["']/g, ''))) {
+                    callback.call(thisArg, value, key, set);
+                }
+            }, thisArg);
+        };
+
+        // Override document.fonts.size to reflect filtered count
+        try {
+            const origSize = Object.getOwnPropertyDescriptor(FontFaceSet.prototype, 'size');
+            // Can't always override size, but try
+        } catch(e) {}
+    }
 })();
 """
 
@@ -682,7 +762,7 @@ async def apply_stealth(context, page, fingerprint: dict = None):
         fingerprint: Optional fingerprint dict from random_fingerprint().
                      If provided, WebGL vendor/renderer, canvas seed,
                      hardware_concurrency, device_memory, chrome_version,
-                     gpu_params, and locale are set to match the profile.
+                     gpu_params, locale, platform are set to match the profile.
     """
     js = STEALTH_JS
     if fingerprint:
@@ -694,6 +774,7 @@ async def apply_stealth(context, page, fingerprint: dict = None):
         chrome_version = fingerprint.get("chrome_version", 131)
         gpu_params = fingerprint.get("gpu_params", {})
         locale = fingerprint.get("locale", "en-US")
+        platform = fingerprint.get("platform", "Windows")
         # Build locale array: en-US → ['en-US', 'en']
         lang_base = locale.split("-")[0]
         locale_arr = f"['{locale}', '{lang_base}']"
@@ -706,6 +787,45 @@ async def apply_stealth(context, page, fingerprint: dict = None):
         js = js.replace("__DEVICE_MEMORY__", str(device_memory))
         js = js.replace("__CHROME_VERSION__", str(chrome_version))
         js = js.replace("__LOCALE__", locale_arr)
+        js = js.replace("'__PLATFORM_VAL__'", f"'{platform}'")
+
+        # ── Client Hints headers (sec-ch-ua-*) ──
+        # These must match the UA string. Server cross-checks them.
+        # Only Chrome/Edge 89+ send these. Firefox doesn't support.
+        is_edge = "Edg/" in fingerprint.get("user_agent", "")
+        brand = '"Microsoft Edge"' if is_edge else '"Google Chrome"'
+        brand_chromium = '"Chromium"'
+        brand_not = '"Not_A Brand";v="24"'
+
+        # Generate realistic full version (major.0.XXXX.XX)
+        # Derive patch version from canvas_seed for consistency
+        patch1 = (canvas_seed % 9000) + 1000
+        patch2 = (canvas_seed % 90) + 10
+        full_version = f"{chrome_version}.0.{patch1}.{patch2}"
+
+        # Platform version
+        if platform == "Windows":
+            platform_version = "15.0.0"
+        elif platform == "macOS":
+            platform_version = "14.5.0"
+        else:
+            platform_version = "6.6.0"
+
+        ch_headers = {
+            "sec-ch-ua": f"{brand};v=\"{chrome_version}\", {brand_chromium};v=\"{chrome_version}\", {brand_not}",
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": f'"{platform}"',
+            "sec-ch-ua-platform-version": f'"{platform_version}"',
+            "sec-ch-ua-full-version-list": f'{brand};v="{full_version}", {brand_chromium};v="{full_version}", {brand_not};v="24.0.0.0"',
+            "sec-ch-ua-arch": '"x86"',
+            "sec-ch-ua-bitness": '"64"',
+            "sec-ch-ua-model": '""',
+        }
+
+        try:
+            await context.set_extra_http_headers(ch_headers)
+        except Exception:
+            pass
 
     # Inject stealth JS before every page load
     await context.add_init_script(js)
