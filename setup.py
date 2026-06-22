@@ -4,7 +4,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="mimo-farmer",
-    version="2.1.0",
+    version="2.3.0",
     description="Automated Xiaomi MiMo account creation CLI tool with referral bonuses",
     long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
@@ -16,6 +16,7 @@ setup(
             "patchright",
             "SpeechRecognition",
             "pydub",
+            "InquirerPy",
             "fastapi>=0.100.0",
             "uvicorn>=0.20.0",
         ],

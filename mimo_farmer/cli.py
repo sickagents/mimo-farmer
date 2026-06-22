@@ -1246,8 +1246,8 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.command is None:
-        parser.print_help()
-        return 0
+        from mimo_farmer.interactive import run_interactive
+        return run_interactive()
 
     handlers = {
         "create": cmd_create,

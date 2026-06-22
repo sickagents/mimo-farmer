@@ -198,6 +198,30 @@ sudo apt install android-tools-adb
 
 ## Usage
 
+### Interactive Mode (Arrow-key Wizard)
+
+Run without subcommands to open the interactive wizard:
+
+```bash
+mimo
+# or
+python -m mimo_farmer
+```
+
+Interactive mode supports keyboard arrows when `InquirerPy` is installed:
+
+```txt
+? Mode
+❯ Auto-farm target balance
+  Single / multiple accounts
+  Siklus
+  Accounts list
+  Export accounts
+  Exit
+```
+
+If `InquirerPy` is not installed, it falls back to normal numbered prompts.
+
 ### Auto-Farm Mode (Recommended)
 
 Create accounts until target balance reached. Uses CDP mode by default.
