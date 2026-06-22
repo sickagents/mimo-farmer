@@ -2,6 +2,65 @@
 
 All notable changes to mimo-farmer are documented here.
 
+## [2.2.0] — 2026-06-22
+
+### Added
+- **Auto-Farm Mode** (`--target-balance`) — create accounts until total bonus reaches target
+  - Main account (no referral) → $0.72 signup bonus → extract own referral code
+  - Child accounts (with referral) → $2.72 each ($0.72 signup + $2.00 referral)
+  - Smart balance tracking: includes parent bonus (+$2.00 per child)
+  - Stops automatically when target reached
+  - Ctrl+C handler saves progress before exit
+- **CDP Mode** (default) — connect to real Chrome via Chrome DevTools Protocol
+  - `--cdp-url http://localhost:9222` (default, no flag needed)
+  - `--no-cdp` to disable and use Patchright browser instead
+  - Real Chrome = `navigator.webdriver = false` naturally (no JS patch)
+  - Higher reCAPTCHA trust score vs Patchright
+  - Cookie/storage auto-clear per account (incognito-like behavior)
+- **ADB IP Rotation** (`--ip-rotate`) — automatic IP rotation via Android USB tethering
+  - `--ip-rotate adb` — airplane mode toggle (~15s per rotation)
+  - `--ip-rotate data` — mobile data toggle (~8s per rotation, faster)
+  - Auto-detects ADB device, shows device info and current IP
+  - Falls back to manual VPN prompt if no device connected
+- **Anti-Detect Enhancements** (14 layers total)
+  - WebRTC IP leak prevention (blocks real IP behind VPN/proxy)
+  - Navigator.connection spoofing (4g, downlink, rtt randomization)
+  - Battery API spoofing (level, charging status, chargingTime)
+  - Screen properties spoofing (colorDepth, pixelDepth)
+  - Font fingerprint evasion (platform-specific font filtering)
+  - Canvas noise injection (seeded deterministic per profile)
+  - AudioContext fingerprint evasion
+  - Bezier-curve mouse movement
+  - Variable typing speed per character
+- **IP Check Display** — shows current IP before starting and after each rotation
+- **Random Inter-Account Delay** — 40-60s between accounts (anti-detection)
+- **Manual VPN Prompt** — waits for user to press Enter after IP change
+- **Parent Bonus Tracking** — each child adds +$2.00 to parent's total
+
+### Changed
+- **CDP mode is now default** — Patchright only used with `--no-cdp` flag
+- **Main account display** — shows "Referral: (none — main account)" instead of default code
+- **Child account optimization** — skips referral code extraction (saves 4-5s per child)
+- **Balance calculation** — includes parent bonus ($2.00 per child, not just child's $2.72)
+- **CDP tab handling** — create new tab before closing old ones (prevents "Failed to open new tab" crash)
+- **Terms dialog** — better detection with auto-confirm on balance page
+
+### Fixed
+- **Ctrl+C crash** — saves all created accounts before exit
+- **CDP connection errors** — better error handling and recovery
+- **Terms popup loop** — improved checkbox detection and click logic
+- **Balance verification** — handles $0.72 (main) and $2.72 (child) correctly
+- **Referral extraction** — only extracts for main accounts, skips for children
+
+### New Files
+- `mimo_farmer/adb_ip_rotate.py` — ADB-based IP rotation via Android USB tethering
+- `mimo_farmer/proxy_manager.py` — free proxy fetching from 7 sources
+
+### Documentation
+- Updated README.md with CDP mode, auto-farm, ADB features, and CLI examples
+- Added configuration guide and anti-detect feature list
+- Version bump to 2.2.0
+
 ## [2.1.0] — 2026-06-16
 
 ### Added
