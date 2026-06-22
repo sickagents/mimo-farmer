@@ -30,6 +30,13 @@ audio/
 # Audit/internal docs (not for public)
 WORKFLOW_AUDIT*.md
 MANUAL_WORKFLOW_AUDIT*.md
+CONTINUOUS_MODE_PLAN.*
+plan_*.md
+
+# Debug/test artifacts
+test_*.py
+check_*.py
+*.png
 
 # OS
 .DS_Store
