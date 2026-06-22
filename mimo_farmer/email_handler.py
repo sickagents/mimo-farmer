@@ -6,7 +6,7 @@ import re
 import string
 import time
 
-from mimo_farmer.config import EMAIL_DOMAINS, OTP_TIMEOUT_SECONDS, OTP_POLL_INTERVAL_SECONDS
+from mimo_farmer.config import EMAIL_DOMAINS, OTP_TIMEOUT_SECONDS, OTP_POLL_INTERVAL_SECONDS, DOMAINS_BLOCKLIST
 
 
 def get_available_domains() -> list[str]:
@@ -26,7 +26,7 @@ def get_available_domains() -> list[str]:
         # Filter: only real email domains (skip CDN/analytics/w3c)
         skip = {'google-analytics.com', 'googlesyndication.com', 'googletagmanager.com',
                 'jsdelivr.net', 'w3.org', 'googleapis.com', 'gstatic.com'}
-        domains = sorted(set(d for d in domains if d not in skip and '.' in d))
+        domains = sorted(set(d for d in domains if d not in skip and d not in DOMAINS_BLOCKLIST and '.' in d))
         if domains:
             print(f"  [email] Found {len(domains)} domains from generator.email")
             return domains
@@ -53,9 +53,23 @@ async def _extract_codes_from_page(email_page) -> list[str]:
     """Extract all 6-digit codes visible on the page."""
     codes = set()
     try:
+        # Try body innerText first
         body = await email_page.evaluate("document.body?.innerText || ''")
         found = re.findall(r'\b(\d{6})\b', body)
         codes.update(found)
+
+        # Also try specific selectors where codes might appear
+        for selector in ['.email-body', '.mail-body', '#email-body',
+                         '.list-group-item', '#email-table', 'td', 'span', 'div']:
+            try:
+                text = await email_page.evaluate(f"""
+                    Array.from(document.querySelectorAll('{selector}'))
+                        .map(el => el.innerText || '').join(' ')
+                """)
+                found = re.findall(r'\b(\d{6})\b', text)
+                codes.update(found)
+            except Exception:
+                pass
     except Exception:
         pass
     return list(codes)
@@ -117,7 +131,7 @@ async def _click_email_and_get_code(email_page, skip_codes: set, inbox_url: str)
                 print(f"  [otp] Codes found on page: {all_codes}")
 
                 # Filter: not year prefix, not in skip list
-                new_codes = [c for c in all_codes if not c.startswith('20') and c not in skip_codes]
+                new_codes = [c for c in all_codes if c not in skip_codes]
                 if new_codes:
                     print(f"  [otp] New code found: {new_codes[0]}")
                     return new_codes[0]
@@ -192,11 +206,24 @@ async def wait_for_otp(page, user: str, domain: str, timeout: int = OTP_TIMEOUT_
     while time.time() - start < timeout:
         check_count += 1
         try:
+            # Check if email_page is still alive
+            try:
+                await email_page.evaluate("1")
+            except Exception:
+                print(f"  [otp] Email page closed, reopening...")
+                try:
+                    email_page = await page.context.new_page()
+                    await email_page.goto(inbox_url, wait_until='domcontentloaded', timeout=60000)
+                    await asyncio.sleep(3)
+                except Exception as reopen_err:
+                    print(f"  [otp] Reopen failed: {reopen_err}")
+                    break
+
             # Step 1: Scan inbox body for codes (might find codes in previews)
             codes = await _extract_codes_from_page(email_page)
 
             if codes:
-                otp_codes = [c for c in codes if not c.startswith('20') and c not in skip_codes]
+                otp_codes = [c for c in codes if c not in skip_codes and c not in ('202020', '202120', '202220', '202320', '202420', '202520', '202620')]
                 if otp_codes:
                     code = otp_codes[0]
                     print(f"  [otp] Found code: {code} (check #{check_count})")

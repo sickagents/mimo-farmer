@@ -32,7 +32,6 @@ from mimo_farmer.config import (
     DEFAULT_PASSWORD, DEFAULT_REFERRAL_CODE, SIGNUP_URL,
     BALANCE_URL, API_KEYS_URL, LOGOUT_URL, ACCOUNTS_DIR,
     HUMAN_DELAY_MIN_MS, HUMAN_DELAY_MAX_MS,
-    FAST_DELAY_MIN_MS, FAST_DELAY_MAX_MS, FAST_MODE_MULTIPLIER,
 )
 from mimo_farmer.captcha import solve_recaptcha, solve_text_captcha, detect_xiaomi_captcha
 from mimo_farmer.email_handler import random_email, wait_for_otp, get_available_domains
@@ -68,27 +67,21 @@ class Timer:
         return sum(t for _, t in self._phases)
 
 
-async def human_delay(min_ms: int = None, max_ms: int = None, fast: bool = False):
-    """Random delay with optional fast-mode reduction."""
+async def human_delay(min_ms: int = None, max_ms: int = None):
+    """Random delay."""
     if min_ms is None:
-        min_ms = FAST_DELAY_MIN_MS if fast else HUMAN_DELAY_MIN_MS
+        min_ms = HUMAN_DELAY_MIN_MS
     if max_ms is None:
-        max_ms = FAST_DELAY_MAX_MS if fast else HUMAN_DELAY_MAX_MS
-    if fast:
-        min_ms = max(50, min_ms // 3)
-        max_ms = max(100, max_ms // 3)
+        max_ms = HUMAN_DELAY_MAX_MS
     await asyncio.sleep(min_ms / 1000 + (max_ms - min_ms) / 1000 * __import__('random').random())
 
 
-async def smart_sleep(seconds: float, fast: bool = False):
-    """Sleep with fast-mode reduction."""
-    if fast:
-        await asyncio.sleep(seconds * FAST_MODE_MULTIPLIER)
-    else:
-        await asyncio.sleep(seconds)
+async def smart_sleep(seconds: float):
+    """Sleep for given seconds."""
+    await asyncio.sleep(seconds)
 
 
-async def handle_dialogs(page, fast: bool = False):
+async def handle_dialogs(page, captcha_mode: str = 'auto'):
     """Handle cookie banners, terms popups, skip buttons."""
     for _ in range(3):
         handled = False
@@ -98,7 +91,7 @@ async def handle_dialogs(page, fast: bool = False):
             cookie_btn = page.get_by_role('button', name='Accept All')
             if await cookie_btn.count() > 0:
                 await cookie_btn.first.click()
-                await human_delay(200, 400, fast)
+                await human_delay(200, 400)
                 handled = True
         except Exception:
             pass
@@ -108,11 +101,11 @@ async def handle_dialogs(page, fast: bool = False):
             cb = page.locator('[role="dialog"] [role="checkbox"]')
             if await cb.count() > 0:
                 await cb.first.click()
-                await human_delay(200, 400, fast)
+                await human_delay(200, 400)
                 confirm = page.get_by_role('button', name='Confirm')
                 if await confirm.count() > 0:
                     await confirm.first.click()
-                    await human_delay(300, 600, fast)
+                    await human_delay(300, 600)
                     handled = True
         except Exception:
             pass
@@ -124,7 +117,7 @@ async def handle_dialogs(page, fast: bool = False):
             )
             if await close_btn.count() > 0:
                 await close_btn.first.click()
-                await human_delay(200, 400, fast)
+                await human_delay(200, 400)
                 handled = True
         except Exception:
             pass
@@ -136,7 +129,7 @@ async def handle_dialogs(page, fast: bool = False):
             )
             if await skip.count() > 0:
                 await skip.first.click()
-                await human_delay(200, 400, fast)
+                await human_delay(200, 400)
                 handled = True
         except Exception:
             pass
@@ -146,7 +139,7 @@ async def handle_dialogs(page, fast: bool = False):
         await asyncio.sleep(0.3)
 
 
-async def handle_terms_dialog(page, fast: bool = False):
+async def handle_terms_dialog(page, captcha_mode: str = 'auto'):
     """Handle Terms modal — WAIT for it to appear, then check checkbox + confirm.
 
     PROVEN FIX (2026-06-15): Use page.locator('input[type="checkbox"]').click()
@@ -284,7 +277,7 @@ async def handle_terms_dialog(page, fast: bool = False):
         return False
 
 
-async def enter_referral(page, referral_code: str, fast: bool = False) -> str:
+async def enter_referral(page, referral_code: str, captcha_mode: str = 'auto') -> str:
     """Enter referral code. Returns status string.
 
     Returns: "ok" if bound, "not_found" if code invalid, "expired" if expired,
@@ -325,8 +318,8 @@ async def enter_referral(page, referral_code: str, fast: bool = False) -> str:
                 if count >= 6:
                     for i, char in enumerate(referral_code):
                         await otp_fields.nth(i).fill(char)
-                        await human_delay(50, 150, fast)
-                    await human_delay(300, 600, fast)
+                        await human_delay(50, 150)
+                    await human_delay(300, 600)
 
                     await page.get_by_role(
                         'button', name=re.compile('Redeem|Submit|Bind', re.I)
@@ -347,7 +340,12 @@ async def enter_referral(page, referral_code: str, fast: bool = False) -> str:
                         })()
                     """)
 
-                    if error_text in ('not_found', 'not_valid', 'retry'):
+                    if error_text == 'not_found':
+                        # Referral code doesn't exist — no point retrying
+                        # Let siklus loop handle promote chain
+                        print(f"  [!] Referral not found: {referral_code}")
+                        return "not_found"
+                    elif error_text in ('not_valid', 'retry'):
                         if attempt < MAX_RETRIES:
                             print(f"  [!] Referral error: {error_text} — retrying ({attempt}/{MAX_RETRIES})...")
                             try:
@@ -359,7 +357,7 @@ async def enter_referral(page, referral_code: str, fast: bool = False) -> str:
                             continue
                         else:
                             print(f"  [!] Referral failed after {MAX_RETRIES} attempts: {error_text}")
-                            return "not_found"
+                            return error_text
                     elif error_text in ('expired', 'used'):
                         print(f"  [!] Referral {error_text} — cannot retry")
                         return error_text
@@ -530,42 +528,78 @@ async def extract_own_referral_code(page) -> str | None:
     return own_code
 
 
-async def wait_for_balance_272(page, timeout: int = 60) -> str:
-    """Wait until balance is $2.72. Never proceed on $0.72."""
+async def wait_for_balance(page, timeout: int = 60, expected: str = "$2.72") -> str:
+    """Wait until balance reaches expected amount.
+
+    For accounts with referral: expected=$2.72
+    For accounts without referral: expected=$0.72
+    """
     start = time.time()
     last_balance = "$0.00"
     while time.time() - start < timeout:
         balance = await extract_balance(page)
         last_balance = balance
-        if balance == "$2.72":
+        if balance == expected:
             return balance
+        # Also accept if balance is higher than expected (referral already applied)
+        try:
+            bal_val = float(balance.replace('$', ''))
+            exp_val = float(expected.replace('$', ''))
+            if bal_val >= exp_val and bal_val > 0:
+                return balance
+        except ValueError:
+            pass
         print(f"  Balance still {balance}, waiting...")
         await asyncio.sleep(5)
     return last_balance
 
 
 async def extract_balance(page) -> str:
-    """Extract balance from page text.
+    """Extract BONUS balance via API (fast) with DOM fallback (slow).
 
-    CRITICAL: Uses regex r'Balance\\s*\\$\\s*([\\d.]+)'
+    API: GET /api/v1/balance → {"data": {"giftBalance": "0.72", ...}}
+    Requires session cookies from browser (already logged in).
     """
-    await page.goto(BALANCE_URL, wait_until='domcontentloaded')
-    await asyncio.sleep(2)
-
-    balance = "$0.00"
+    # Try API first (instant, no page navigation needed)
     try:
-        body = await page.evaluate("document.body.innerText")
-        m = re.search(r'Balance\s*\$\s*([\d.]+)', body)
-        if m:
-            balance = f"${m.group(1)}"
-        else:
-            m = re.search(r'\$([\d.]+)', body)
-            if m:
-                balance = f"${m.group(1)}"
+        result = await page.evaluate("""async () => {
+            const r = await fetch('/api/v1/balance', {credentials: 'include'});
+            if (!r.ok) return null;
+            return await r.json();
+        }""")
+        if result and result.get("data"):
+            gift = result["data"].get("giftBalance", "0.00")
+            cash = result["data"].get("cashBalance", "0.00")
+            print(f"  [balance] API: gift=${gift}, cash=${cash}")
+            return f"${float(gift):.2f}"
+    except Exception as e:
+        print(f"  [balance] API failed: {e}, falling back to DOM scrape")
+
+    # Fallback: navigate to page and scrape DOM
+    await page.goto(BALANCE_URL, wait_until='domcontentloaded')
+    await asyncio.sleep(3)
+
+    bonus = 0.0
+    cash = 0.0
+    try:
+        body = await page.evaluate("document.body?.innerText || ''")
+
+        for m in re.finditer(r'\$\s*([\d.]+)', body):
+            start = m.start()
+            before = body[max(0, start - 30):start].lower()
+            value = float(m.group(1))
+
+            if 'bonus' in before:
+                bonus = value
+            elif 'cash' in before:
+                cash = value
+            elif bonus == 0.0:
+                bonus = value  # First unlabeled = bonus (page shows bonus first)
+
     except Exception:
         pass
 
-    return balance
+    return f"${bonus:.2f}"
 
 
 async def detect_risk_control(page) -> bool:
@@ -616,7 +650,7 @@ async def clear_xiaomi_cookies(context) -> None:
     await asyncio.sleep(1)
 
 
-async def handle_identity_verification(page, user: str, domain: str, fast: bool = False, first_otp: str = None) -> bool:
+async def handle_identity_verification(page, user: str, domain: str, captcha_mode: str = 'auto', first_otp: str = None) -> bool:
     """Handle Xiaomi identity verification page (verifyEmail).
 
     This page appears AFTER initial OTP for some accounts.
@@ -716,7 +750,7 @@ async def handle_identity_verification(page, user: str, domain: str, fast: bool 
         if count >= 6:
             for i, digit in enumerate(code[:6]):
                 await otp_inputs.nth(i).fill(digit)
-                await human_delay(50, 150, fast)
+                await human_delay(50, 150)
         else:
             await page.locator('input[type="text"]').first.fill(code)
 
@@ -741,7 +775,7 @@ async def handle_identity_verification(page, user: str, domain: str, fast: bool 
     return True
 
 
-async def create_api_key(page, label: str, fast: bool = False) -> str | None:
+async def create_api_key(page, label: str, captcha_mode: str = 'auto') -> str | None:
     """Create and extract API key.
 
     Strategy: intercept network response for full key (input[disabled] shows masked).
@@ -750,7 +784,7 @@ async def create_api_key(page, label: str, fast: bool = False) -> str | None:
     print("  Creating API key...")
     await page.goto(API_KEYS_URL, wait_until='domcontentloaded')
     await asyncio.sleep(3)
-    await handle_dialogs(page, fast)
+    await handle_dialogs(page, captcha_mode)
     await asyncio.sleep(1)
 
     try:
@@ -922,13 +956,49 @@ async def create_api_key(page, label: str, fast: bool = False) -> str | None:
     return None
 
 
+DOMAIN_MAX_RETRIES = 3
+
+
+async def create_account_with_retry(**kwargs) -> dict | None:
+    """Wrapper: auto-retries create_account when domain is flagged or email is unsafe.
+
+    Detects flagged domains (balance $0.00), unsafe emails, adds to blocklist,
+    and retries with a fresh browser + domain up to DOMAIN_MAX_RETRIES times.
+    """
+    last_result = None
+    for attempt in range(DOMAIN_MAX_RETRIES):
+        result = await create_account(**kwargs)
+        last_result = result
+
+        if result and result.get('domain_flagged'):
+            domain = result.get('domain', '?')
+            print(f"  🔄 Domain flagged — retrying with fresh browser (attempt {attempt + 1}/{DOMAIN_MAX_RETRIES})")
+            kwargs.pop('preferred_domain', None)  # Pick new domain on retry
+            continue
+
+        if result and result.get('unsafe_email'):
+            domain = result.get('domain', '?')
+            print(f"  🔄 Unsafe email — retrying with fresh browser + new domain (attempt {attempt + 1}/{DOMAIN_MAX_RETRIES})")
+            kwargs.pop('preferred_domain', None)  # Pick new domain on retry
+            continue
+
+        return result
+
+    # All retries exhausted
+    if last_result and (last_result.get('domain_flagged') or last_result.get('unsafe_email')):
+        print(f"  [!] All {DOMAIN_MAX_RETRIES} attempts failed. Giving up.")
+    return last_result
+
+
 async def create_account(
     referral_code: str = DEFAULT_REFERRAL_CODE,
     password: str = DEFAULT_PASSWORD,
-    fast: bool = False,
+    captcha_mode: str = 'auto',
     account_num: int = 0,
     skip_referral: bool = False,
     preferred_domain: str = None,
+    proxy_config: dict = None,
+    cdp_url: str = None,
 ) -> dict | None:
     """Full MiMo account creation pipeline.
 
@@ -952,13 +1022,12 @@ async def create_account(
     Args:
         referral_code: 6-char MiMo referral code
         password: Account password
-        fast: Enable fast mode (reduced delays)
+        captcha_mode: Captcha solving mode ('auto', 'manual', etc.)
         preferred_domain: If set, use this domain for email (e.g. from main account in siklus mode)
 
     Returns:
         Dict with credentials or None on failure
     """
-    email, user, domain = random_email()
     if not account_num:
         account_num = int(time.time()) % 1000
     # Generate random password per account (avoid bot detection)
@@ -968,8 +1037,9 @@ async def create_account(
     timer = Timer()
     risk_control = False
     referral_not_found = False  # Set by enter_referral if code not found
+    gift_balance = 0.0
 
-    # Fetch available domains from generator.email (once per session)
+    # Fetch available domains from generator.email BEFORE generating email
     available_domains = get_available_domains()
 
     # If preferred_domain set (siklus mode), filter to that domain only
@@ -979,46 +1049,97 @@ async def create_account(
         else:
             # Domain might not be in current list — still try it
             available_domains = [preferred_domain]
-        # Re-generate email with preferred domain
-        email, user, domain = random_email(available_domains)
+
+    # Generate email using available domains (random from all, not just fallback)
+    email, user, domain = random_email(available_domains)
 
     email_retries = 0
     MAX_EMAIL_RETRIES = 5
 
-    mode_label = "FAST" if fast else "NORMAL"
+    mode_label = captcha_mode.upper()
     print("=" * 60)
     print(f"  MiMo Account Creator — Mode: {mode_label}")
     print("=" * 60)
     print(f"  Email: {email}")
-    print(f"  Referral: {referral_code}")
+    if skip_referral:
+        print(f"  Referral: (none — main account)")
+    else:
+        print(f"  Referral: {referral_code}")
     print()
 
     async with async_playwright() as p:
-        # Generate random fingerprint for this session
-        fp = random_fingerprint()
-        print(f"  [stealth] UA: {fp['user_agent'][:60]}...")
-        print(f"  [stealth] Viewport: {fp['viewport']['width']}x{fp['viewport']['height']}")
-        print(f"  [stealth] Timezone: {fp['timezone']}")
+        if cdp_url:
+            # Connect to existing Chrome via CDP (real browser, no automation detect)
+            print(f"  [cdp] Connecting to Chrome: {cdp_url}")
+            browser = await p.chromium.connect_over_cdp(cdp_url)
+            context = browser.contexts[0] if browser.contexts else await browser.new_context()
+            
+            # Create NEW page FIRST (before closing old tabs — prevents crash)
+            page = await context.new_page()
+            
+            # Clear ALL cookies and storage (make it like incognito)
+            print(f"  [cdp] Clearing cookies and storage...")
+            await context.clear_cookies()
+            # Clear storage on the new page (navigate to xiaomi first to clear their cookies)
+            try:
+                await page.evaluate("""
+                    (() => {
+                        try { localStorage.clear(); } catch(e) {}
+                        try { sessionStorage.clear(); } catch(e) {}
+                        document.cookie.split(';').forEach(c => {
+                            const name = c.split('=')[0].trim();
+                            document.cookie = name + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
+                        });
+                    })()
+                """)
+            except Exception:
+                pass
+            
+            # Close OLD tabs (keep only our new one)
+            for pg in list(context.pages):
+                if pg != page:
+                    try:
+                        await pg.close()
+                    except Exception:
+                        pass
+            
+            fp = {'user_agent': 'Chrome CDP (real browser)', 'viewport': {'width': 1920, 'height': 1080}, 'timezone': 'System'}
+            print(f"  [cdp] Connected — navigator.webdriver=False (real Chrome, fresh session)")
+        else:
+            # Generate random fingerprint for this session
+            fp = random_fingerprint()
+            print(f"  [stealth] UA: {fp['user_agent'][:60]}...")
+            print(f"  [stealth] Viewport: {fp['viewport']['width']}x{fp['viewport']['height']}")
+            print(f"  [stealth] Timezone: {fp['timezone']}")
 
-        browser = await p.chromium.launch(
-            headless=False,
-            args=[
-                '--disable-blink-features=AutomationControlled',
-                '--disable-features=IsolateOrigins,site-per-process',
-                '--no-first-run',
-                '--no-default-browser-check',
-            ]
-        )
-        context = await browser.new_context(
-            viewport=fp['viewport'],
-            locale=fp['locale'],
-            user_agent=fp['user_agent'],
-            timezone_id=fp['timezone'],
-        )
-        page = await context.new_page()
+        if not cdp_url:
+            browser = await p.chromium.launch(
+                headless=False,
+                args=[
+                    '--disable-blink-features=AutomationControlled',
+                    '--disable-features=IsolateOrigins,site-per-process',
+                    '--no-first-run',
+                    '--no-default-browser-check',
+                    '--start-maximized',
+                ],
+                **({"proxy": proxy_config} if proxy_config else {}),
+            )
+            context = await browser.new_context(
+                no_viewport=True,
+                locale=fp['locale'],
+                user_agent=fp['user_agent'],
+                timezone_id=fp['timezone'],
+            )
+            page = await context.new_page()
 
-        # Apply anti-detection stealth JS
-        await apply_stealth(context, page, fp)
+        # Longer timeouts when using proxy (slow connection)
+        if proxy_config and not cdp_url:
+            context.set_default_timeout(60000)  # 60s for actions
+            context.set_default_navigation_timeout(90000)  # 90s for page loads
+
+        # Apply anti-detection stealth JS (skip for CDP — real Chrome doesn't need it)
+        if not cdp_url:
+            await apply_stealth(context, page, fp)
 
         # Phase 1: Navigate directly to signup page (no tab click needed)
         print("[1] Navigating to signup...")
@@ -1052,14 +1173,8 @@ async def create_account(
         # Phase 2: Fill form
         print("[2] Filling form...")
         try:
-            # Random country selection
-            COUNTRIES = [
-                "United States", "United Kingdom", "Canada", "Australia", "Germany",
-                "France", "Japan", "South Korea", "Singapore", "Thailand",
-                "Malaysia", "Philippines", "Vietnam", "India", "Brazil",
-                "Mexico", "Turkey", "Netherlands", "Sweden", "Poland",
-            ]
-            selected_country = random.choice(COUNTRIES)
+            # Country from fingerprint (consistent with timezone/locale/UA)
+            selected_country = fp.get('country', 'United States')
             try:
                 # Click the country/region selector (the combobox area)
                 country_selector = page.locator('[class*="region"], [class*="country"], [class*="select"]').first
@@ -1083,19 +1198,19 @@ async def create_account(
             email_field = page.get_by_role('textbox', name='Email')
             await email_field.wait_for(state='visible', timeout=15000)
             await email_field.fill(email)
-            await human_delay(150, 350, fast)
+            await human_delay(150, 350)
 
             pw_field = page.get_by_role('textbox', name='Enter your new password')
             await pw_field.wait_for(state='visible', timeout=5000)
             await pw_field.fill(password)
-            await human_delay(150, 350, fast)
+            await human_delay(150, 350)
 
             confirm_field = page.get_by_role('textbox', name='Confirm new password')
             await confirm_field.fill(password)
-            await human_delay(150, 350, fast)
+            await human_delay(150, 350)
 
             await page.get_by_role('checkbox', name="I've read and agreed").click()
-            await human_delay(300, 600, fast)
+            await human_delay(300, 600)
             print("  Form filled")
         except Exception as e:
             print(f"  [!] Form fill error: {e}")
@@ -1167,7 +1282,7 @@ async def create_account(
                         await email_field.fill('')
                         await asyncio.sleep(0.3)
                         await email_field.fill(email)
-                        await human_delay(150, 350, fast)
+                        await human_delay(150, 350)
                     except Exception:
                         # Fallback selector
                         try:
@@ -1236,8 +1351,85 @@ async def create_account(
 
                 if has_recaptcha and not recaptcha_already_checked and not recaptcha_solved:
                     print(f"  [!] reCAPTCHA detected (round {captcha_rounds})")
-                    captcha_ok = await solve_recaptcha(page)
-                    if captcha_ok:
+
+                    # Check for "automated queries" — IP is flagged by Google
+                    # Must check inside reCAPTCHA frames, not just main page body
+                    ip_blocked = False
+                    try:
+                        # Check main page body
+                        ip_blocked = await page.evaluate("""
+                            (() => {
+                                const body = document.body?.innerText || '';
+                                const lower = body.toLowerCase();
+                                if (lower.includes('automated queries') || 
+                                    (lower.includes('try again later') && lower.includes('protect our users')))
+                                    return true;
+                                return false;
+                            })()
+                        """)
+                    except Exception:
+                        pass
+
+                    # Also check inside reCAPTCHA bframe (where the popup actually appears)
+                    if not ip_blocked:
+                        for frame in page.frames:
+                            if 'bframe' in frame.url and 'recaptcha' in frame.url:
+                                try:
+                                    ip_blocked = await frame.evaluate("""
+                                        (() => {
+                                            const body = document.body?.innerText || '';
+                                            const lower = body.toLowerCase();
+                                            if (lower.includes('automated queries') ||
+                                                (lower.includes('try again later') && lower.includes('protect our users')))
+                                                return true;
+                                            return false;
+                                        })()
+                                    """)
+                                except Exception:
+                                    pass
+                                break
+
+                    if ip_blocked:
+                        print()
+                        print("  " + "!" * 50)
+                        print("  [!] reCAPTCHA: AUTOMATED QUERIES DETECTED")
+                        print("  [!] IP lo di-flag sama Google reCAPTCHA.")
+                        print("  [!] Ganti IP (VPN/residential proxy) dulu.")
+                        print("  " + "!" * 50)
+                        await browser.close()
+                        return {
+                            "ip_blocked": True,
+                            "email": email,
+                            "password": password,
+                            "balance": "$0.00",
+                            "api_key": None,
+                            "risk_control": False,
+                            "referral": referral_code,
+                            "created": time.strftime("%Y-%m-%d %H:%M:%S"),
+                            "gift_balance": gift_balance,
+                        }
+
+                    captcha_ok = await solve_recaptcha(page, captcha_mode=captcha_mode)
+                    if captcha_ok == 'ip_blocked':
+                        print()
+                        print("  " + "!" * 50)
+                        print("  [!] reCAPTCHA: AUTOMATED QUERIES DETECTED")
+                        print("  [!] IP lo di-flag sama Google reCAPTCHA.")
+                        print("  [!] Ganti IP (VPN/residential proxy) dulu.")
+                        print("  " + "!" * 50)
+                        await browser.close()
+                        return {
+                            "ip_blocked": True,
+                            "email": email,
+                            "password": password,
+                            "balance": "$0.00",
+                            "api_key": None,
+                            "risk_control": False,
+                            "referral": referral_code,
+                            "created": time.strftime("%Y-%m-%d %H:%M:%S"),
+                            "gift_balance": gift_balance,
+                        }
+                    elif captcha_ok:
                         recaptcha_solved = True
                     else:
                         print("[X] reCAPTCHA failed!")
@@ -1307,55 +1499,37 @@ async def create_account(
                 print("[5] Getting OTP...")
                 code = await wait_for_otp(page, user, domain)
 
-            # Handle "not safe" email — retry with new email
+            # Handle "not safe" email — close browser and retry with fresh session
             if code == "__UNSAFE__":
                 email_signup_attempt += 1
                 # If preferred domain was set but rejected, fallback to all domains
                 if preferred_domain and len(available_domains) == 1:
                     print(f"  [!] Preferred domain '{preferred_domain}' rejected — falling back to random domains")
                     available_domains = get_available_domains()
-                print(f"  [!] Unsafe email — retrying signup with new email (attempt {email_signup_attempt})")
-                email, user, domain = random_email(available_domains)
-                print(f"  [email] New email: {email}")
 
-                # Navigate back to signup page
-                await page.goto(SIGNUP_URL, wait_until='domcontentloaded')
-                await asyncio.sleep(3)
+                # Add domain to blocklist
+                from mimo_farmer.config import DOMAINS_BLOCKLIST
+                if domain not in DOMAINS_BLOCKLIST:
+                    DOMAINS_BLOCKLIST.append(domain)
+                    print(f"  [!] Domain '{domain}' blocked (unsafe email) — added to blocklist")
 
-                # Wait for signup form
-                for _ in range(5):
-                    try:
-                        if await page.get_by_role('textbox', name='Email').is_visible(timeout=2000):
-                            break
-                    except Exception:
-                        pass
-                    await asyncio.sleep(2)
-
-                # Refill form with new email
-                try:
-                    email_field = page.get_by_role('textbox', name='Email')
-                    await email_field.wait_for(state='visible', timeout=10000)
-                    await email_field.fill(email)
-                    await human_delay(150, 350, fast)
-
-                    pw_field = page.get_by_role('textbox', name='Enter your new password')
-                    await pw_field.wait_for(state='visible', timeout=5000)
-                    await pw_field.fill(password)
-                    await human_delay(150, 350, fast)
-
-                    confirm_field = page.get_by_role('textbox', name='Confirm new password')
-                    await confirm_field.fill(password)
-                    await human_delay(150, 350, fast)
-
-                    await page.get_by_role('checkbox', name="I've read and agreed").click()
-                    await human_delay(300, 600, fast)
-                    print("  Form refilled with new email")
-                except Exception as e:
-                    print(f"  [!] Refill error: {e}")
+                print(f"  [!] Unsafe email — closing page, retrying with fresh session (attempt {email_signup_attempt})")
+                if cdp_url:
+                    await page.close()
+                else:
                     await browser.close()
-                    return None
-
-                continue  # Retry outer loop with new email
+                return {
+                    "unsafe_email": True,
+                    "domain": domain,
+                    "email": email,
+                    "password": password,
+                    "balance": "$0.00",
+                    "api_key": None,
+                    "risk_control": False,
+                    "referral": referral_code,
+                    "created": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "gift_balance": gift_balance,
+                }
 
             break  # Normal flow — exit outer retry loop
 
@@ -1377,7 +1551,7 @@ async def create_account(
             if count >= 6:
                 for i, digit in enumerate(code[:6]):
                     await otp_inputs.nth(i).fill(digit)
-                    await human_delay(50, 200, fast)
+                    await human_delay(50, 200)
             else:
                 await page.locator('input[type="text"]').first.fill(code)
 
@@ -1402,14 +1576,14 @@ async def create_account(
 
         # Phase 5.5: Identity verification (may appear for some accounts)
         print("[6.5] Checking for identity verification...")
-        verify_handled = await handle_identity_verification(page, user, domain, fast, first_otp=code)
+        verify_handled = await handle_identity_verification(page, user, domain, captcha_mode, first_otp=code)
         if verify_handled:
             print("  Identity verification handled!")
             # After verification, navigate to MiMo platform to establish session
             print("  Establishing MiMo platform session...")
             await page.goto("https://platform.xiaomimimo.com/", wait_until='domcontentloaded')
             await asyncio.sleep(2)
-            await handle_dialogs(page, fast)
+            await handle_dialogs(page, captcha_mode)
             timer.phase("Identity verification")
         else:
             print("  No identity verification needed, continuing...")
@@ -1420,7 +1594,7 @@ async def create_account(
         await asyncio.sleep(2)  # Wait for modal to fully render
         terms_ok = False
         for _terms_attempt in range(3):
-            terms_ok = await handle_terms_dialog(page, fast)
+            terms_ok = await handle_terms_dialog(page, captcha_mode)
             if terms_ok:
                 break
             await asyncio.sleep(2)
@@ -1447,8 +1621,8 @@ async def create_account(
         await asyncio.sleep(3)
 
         # Handle terms dialog on balance page
-        await handle_terms_dialog(page, fast)
-        await handle_dialogs(page, fast)
+        await handle_terms_dialog(page, captcha_mode)
+        await handle_dialogs(page, captcha_mode)
         timer.phase("Balance page + terms")
 
         # Phase 8: Enter referral OR extract own referral code (siklus mode)
@@ -1463,11 +1637,39 @@ async def create_account(
             timer.phase("Referral extraction")
         else:
             print("[9] Entering referral code...")
-            referral_status = await enter_referral(page, referral_code, fast)
+            referral_status = await enter_referral(page, referral_code, captcha_mode)
             referral_ok = (referral_status == "ok")
             referral_not_found = (referral_status == "not_found")
-            await handle_dialogs(page, fast)
+            await handle_dialogs(page, captcha_mode)
             timer.phase("Referral entry")
+
+        # Extract own referral code ONLY for main accounts (skip_referral=True)
+        # Child accounts don't need their own referral code
+        if not own_referral and skip_referral:
+            try:
+                own_referral = await extract_own_referral_code(page)
+                if own_referral:
+                    print(f"  ✓ Own referral code: {own_referral}")
+            except Exception:
+                pass
+
+        # If referral not found — skip API key, return early for replacement
+        if referral_not_found:
+            print(f"  [!] Referral '{referral_code}' not found — skipping API key, returning for replacement.")
+            await browser.close()
+            return {
+                "email": email,
+                "password": password,
+                "balance": "$0.00",
+                "referral": referral_code,
+                "api_key": None,
+                "risk_control": False,
+                "referral_failed": True,
+                "own_referral": own_referral,
+                "created": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "method": "mimo-farmer",
+                "gift_balance": gift_balance,
+            }
 
         # Phase 9: Detect risk control
         print("[10] Checking for risk control...")
@@ -1485,21 +1687,52 @@ async def create_account(
                 "own_referral": own_referral,
                 "created": time.strftime("%Y-%m-%d %H:%M:%S"),
                 "method": "cli_auto",
+                "gift_balance": gift_balance,
             }
         timer.phase("Risk control check")
 
-        # Phase 10: Verify balance — MUST be $2.72 before continuing
-        print("[11] Verifying balance...")
-        balance = await wait_for_balance_272(page, timeout=10)
+        # Phase 10: Verify balance
+        # With referral: $2.72, without referral: $0.72
+        expected_balance = "$0.72" if skip_referral or referral_not_found else "$2.72"
+        print(f"[11] Verifying balance (expect {expected_balance})...")
+        balance = await wait_for_balance(page, timeout=15, expected=expected_balance)
         print(f"  Balance: {balance}")
         timer.phase("Balance verify")
 
-        if balance != "$2.72":
+        try:
+            gift_balance = float(balance.replace('$', '').strip())
+        except (ValueError, AttributeError):
+            gift_balance = 0.0
+
+        if balance == "$0.00":
+            print(f"  [!] Balance $0.00 — domain may be flagged.")
+
+        if balance not in ("$2.72", "$0.72"):
             print(f"  [!] Balance {balance} (referral may not have bound) — continuing to API key anyway.")
+
+        # Auto-detect flagged domain: balance $0.00 = domain blocked by Xiaomi
+        if balance == "$0.00":
+            from mimo_farmer.config import DOMAINS_BLOCKLIST
+            if domain not in DOMAINS_BLOCKLIST:
+                DOMAINS_BLOCKLIST.append(domain)
+                print(f"  [!] Domain '{domain}' flagged by Xiaomi (balance $0.00) — added to blocklist")
+            await browser.close()
+            return {
+                "domain_flagged": True,
+                "domain": domain,
+                "email": email,
+                "password": password,
+                "balance": "$0.00",
+                "api_key": None,
+                "risk_control": False,
+                "referral": referral_code,
+                "created": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "gift_balance": gift_balance,
+            }
 
         # Phase 11: API key
         print("[12] Creating API key...")
-        api_key = await create_api_key(page, f"auto_{account_num}", fast)
+        api_key = await create_api_key(page, f"auto_{account_num}", captcha_mode)
         timer.phase("API key creation")
 
         if not api_key:
@@ -1521,6 +1754,7 @@ async def create_account(
             "own_referral": own_referral,
             "created": time.strftime("%Y-%m-%d %H:%M:%S"),
             "method": "mimo-farmer",
+            "gift_balance": gift_balance,
         }
 
         # Per-account files removed — only batch file saved at end of run

@@ -3,7 +3,7 @@
 import os
 
 # Referral
-DEFAULT_REFERRAL_CODE = "FHAZMU"
+DEFAULT_REFERRAL_CODE = "M57JCH"
 DEFAULT_PASSWORD = "papoi123"
 
 # URLs
@@ -18,11 +18,14 @@ ACCOUNTS_DIR = os.path.join(PROJECT_ROOT, "accounts")
 AUDIO_DIR = os.path.join(PROJECT_ROOT, ".audio_cache")
 
 # Timing
-FAST_MODE_MULTIPLIER = 0.4
 HUMAN_DELAY_MIN_MS = 150
 HUMAN_DELAY_MAX_MS = 600
-FAST_DELAY_MIN_MS = 50
-FAST_DELAY_MAX_MS = 200
+
+# CAPTCHA modes: "auto" (reCAPTCHA audio STT, Xiaomi manual) or "manual" (all manual)
+CAPTCHA_MODE_DEFAULT = "auto"
+
+# Auto-farm
+TARGET_BALANCE_DEFAULT = 10.0
 
 # OTP
 OTP_TIMEOUT_SECONDS = 180
@@ -33,4 +36,7 @@ CAPTCHA_MAX_RETRIES = 5
 
 # Email domains for generator.email
 # Fallback if dynamic scraping fails
-EMAIL_DOMAINS = ["banri.xyz"]
+EMAIL_DOMAINS = ["ferd.live", "gudri.com", "cihuy.net"]
+
+# Domains flagged by Xiaomi — always excluded even if scraped
+DOMAINS_BLOCKLIST = ["banri.xyz", "embege.xyz"]

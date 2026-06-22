@@ -28,7 +28,7 @@ class CreateRequest(BaseModel):
     mode: str = Field(default="single", pattern="^(single|batch|continuous|parallel|siklus)$")
     referral: str = ""
     count: int = Field(default=1, ge=1, le=200)
-    fast: bool = False
+    captcha_mode: str = 'auto'
     parallel: int = Field(default=1, ge=1, le=10)
     password: str = ""
 
@@ -36,7 +36,7 @@ class CreateRequest(BaseModel):
 class SettingsRequest(BaseModel):
     default_referral: str = ""
     default_password: str = ""
-    fast_default: bool = False
+    captcha_mode_default: str = 'auto'
     ip_rotation_interval: int = Field(default=5, ge=1, le=100)
     headless: bool = False
     email_domains: list[str] = Field(default_factory=list)
@@ -48,7 +48,7 @@ class JobState:
     mode: str
     referral: str
     count: int
-    fast: bool
+    captcha_mode: str = 'auto'
     parallel: int
     status: str = "pending"
     started_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%d %H:%M:%S"))
@@ -63,7 +63,7 @@ class JobState:
 SETTINGS: dict[str, Any] = {
     "default_referral": DEFAULT_REFERRAL_CODE,
     "default_password": DEFAULT_PASSWORD,
-    "fast_default": False,
+    "captcha_mode_default": "auto",
     "ip_rotation_interval": 5,
     "headless": False,
     "email_domains": list(EMAIL_DOMAINS),
@@ -152,7 +152,7 @@ def create(request: CreateRequest) -> dict[str, Any]:
             mode=request.mode,
             referral=referral,
             count=count,
-            fast=request.fast,
+            captcha_mode=request.captcha_mode,
             parallel=parallel,
         )
         job = JOB
@@ -207,7 +207,7 @@ def update_settings(request: SettingsRequest) -> dict[str, Any]:
     SETTINGS.update({
         "default_referral": request.default_referral.strip().upper(),
         "default_password": request.default_password,
-        "fast_default": request.fast_default,
+        "captcha_mode_default": request.captcha_mode_default,
         "ip_rotation_interval": request.ip_rotation_interval,
         "headless": request.headless,
         "email_domains": [d.strip() for d in request.email_domains if d.strip()],
@@ -306,10 +306,10 @@ def _run_siklus_job(job: JobState, password: str) -> list[dict[str, Any] | None]
 
 
 def _create_one(job: JobState, referral: str, password: str, account_num: int, skip_referral: bool) -> dict[str, Any] | None:
-    from mimo_farmer.creator import create_account
+    from mimo_farmer.creator import create_account_with_retry
 
     async def run() -> dict[str, Any] | None:
-        return await create_account(referral_code=referral, password=password, fast=job.fast, account_num=account_num, skip_referral=skip_referral)
+        return await create_account_with_retry(referral_code=referral, password=password, captcha_mode=job.captcha_mode, account_num=account_num, skip_referral=skip_referral)
 
     buffer = io.StringIO()
     with contextlib.redirect_stdout(_ProgressWriter(job, buffer)):

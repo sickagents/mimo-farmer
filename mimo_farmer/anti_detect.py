@@ -2,7 +2,7 @@
 
 Provides:
 1. Random User-Agent, viewport, timezone, locale per session
-2. Canvas noise injection — SEEDDED deterministic per profile (consistent hash)
+2. Canvas noise injection — SEEDED deterministic per profile (consistent hash)
 3. WebGL full parameter spoofing (not just vendor/renderer)
 4. Navigator.plugins/languages randomization (Chrome 127+ aware)
 5. hardwareConcurrency / deviceMemory override per profile
@@ -10,6 +10,11 @@ Provides:
 7. DeviceId cookie clearing
 8. Human-like mouse movement (bezier curves)
 9. Variable typing speed per character
+10. WebRTC IP leak prevention (block real IP behind VPN/proxy)
+11. Navigator.connection spoofing (network info: 4g, downlink, rtt)
+12. Battery API spoofing (level, charging status, chargingTime)
+13. Screen properties spoofing (colorDepth, pixelDepth)
+14. Font fingerprint evasion (platform-specific font filtering)
 """
 
 import hashlib
@@ -319,11 +324,13 @@ def random_fingerprint() -> dict:
     so Google doesn't flag mismatched fingerprints (e.g., Mac + Jakarta timezone).
     """
     profile = random.choice(FINGERPRINT_PROFILES)
-    viewport = random.choice(VIEWPORTS)
+    viewport = {"width": 1920, "height": 1080}  # Fixed — no random
     # Derive a deterministic canvas seed from profile identity
     canvas_seed = int(hashlib.sha256(
         (profile["ua"] + profile["timezone"] + profile["webgl_renderer"]).encode()
     ).hexdigest()[:8], 16)
+    # Map timezone to signup country (keeps fingerprint consistent)
+    country = _timezone_to_country(profile["timezone"])
     return {
         "user_agent": profile["ua"],
         "viewport": viewport,
@@ -337,7 +344,26 @@ def random_fingerprint() -> dict:
         "gpu_params": profile["gpu_params_fn"](),
         "canvas_seed": canvas_seed,
         "platform": profile["platform"],
+        "country": country,
     }
+
+
+# Timezone → Xiaomi signup country mapping
+_TIMEZONE_COUNTRY_MAP = {
+    "America/New_York": "United States",
+    "America/Chicago": "United States",
+    "America/Los_Angeles": "United States",
+    "Europe/London": "United Kingdom",
+    "Europe/Berlin": "Germany",
+    "Australia/Sydney": "Australia",
+    "Asia/Jakarta": "Indonesia",
+    "Asia/Singapore": "Singapore",
+}
+
+
+def _timezone_to_country(timezone: str) -> str:
+    """Map browser timezone to a consistent signup country."""
+    return _TIMEZONE_COUNTRY_MAP.get(timezone, "United States")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -545,9 +571,86 @@ STEALTH_JS = """
         };
     }
 
-    // ── 11. Screen dimensions ──
+    // ── 11. Screen dimensions + properties ──
     Object.defineProperty(screen, 'availWidth', { get: () => window.innerWidth });
     Object.defineProperty(screen, 'availHeight', { get: () => window.innerHeight });
+    // Spoof color depth to match real devices (24 or 30 bit)
+    const __colorDepth = __CANVAS_SEED__ % 2 === 0 ? 24 : 30;
+    Object.defineProperty(screen, 'colorDepth', { get: () => __colorDepth });
+    Object.defineProperty(screen, 'pixelDepth', { get: () => __colorDepth });
+
+    // ── 11b. WebRTC IP leak prevention ──
+    // Block WebRTC from leaking real IP behind VPN/proxy.
+    // Override RTCPeerConnection to return fake local candidates.
+    const __origRTC = window.RTCPeerConnection || window.webkitRTCPeerConnection;
+    if (__origRTC) {
+        const __FakeRTC = function(config, constraints) {
+            // Strip ICE servers to prevent STUN/TURN IP discovery
+            if (config && config.iceServers) {
+                config.iceServers = [];
+            }
+            const pc = new __origRTC(config, constraints);
+
+            // Override createDataChannel to prevent data channel fingerprinting
+            const origCreateOffer = pc.createOffer.bind(pc);
+            pc.createOffer = function(options) {
+                return origCreateOffer(options).then(offer => {
+                    // Remove candidates from SDP to prevent IP leak
+                    if (offer && offer.sdp) {
+                        offer.sdp = offer.sdp.replace(/a=candidate:.*
+\n/g, '');
+                        offer.sdp = offer.sdp.replace(/a=candidate:.*$/gm, '');
+                    }
+                    return offer;
+                });
+            };
+
+            return pc;
+        };
+        // Copy static methods
+        __FakeRTC.prototype = __origRTC.prototype;
+        window.RTCPeerConnection = __FakeRTC;
+        if (window.webkitRTCPeerConnection) {
+            window.webkitRTCPeerConnection = __FakeRTC;
+        }
+    }
+
+    // ── 11c. Navigator.connection spoofing ──
+    // Spoof network connection info (downlink, rtt, type)
+    const __connectionProfiles = [
+        { effectiveType: '4g', downlink: 10, rtt: 50, saveData: false },
+        { effectiveType: '4g', downlink: 25, rtt: 30, saveData: false },
+        { effectiveType: '4g', downlink: 50, rtt: 20, saveData: false },
+        { effectiveType: '4g', downlink: 100, rtt: 10, saveData: false },
+        { effectiveType: '4g', downlink: 15, rtt: 80, saveData: false },
+    ];
+    const __connProfile = __connectionProfiles[__CANVAS_SEED__ % __connectionProfiles.length];
+    if (navigator.connection) {
+        Object.defineProperty(navigator.connection, 'effectiveType', { get: () => __connProfile.effectiveType, configurable: true });
+        Object.defineProperty(navigator.connection, 'downlink', { get: () => __connProfile.downlink, configurable: true });
+        Object.defineProperty(navigator.connection, 'rtt', { get: () => __connProfile.rtt, configurable: true });
+        Object.defineProperty(navigator.connection, 'saveData', { get: () => __connProfile.saveData, configurable: true });
+    }
+
+    // ── 11d. Battery API spoofing ──
+    // Spoof battery status to prevent battery fingerprinting
+    const __batteryRng = __seeded_rng(__CANVAS_SEED__ + 333);
+    const __batteryLevel = Math.round(__batteryRng() * 60 + 30) / 100; // 0.30 - 0.90
+    const __batteryCharging = __batteryRng() > 0.5;
+    if (navigator.getBattery) {
+        navigator.getBattery = () => Promise.resolve({
+            charging: __batteryCharging,
+            chargingTime: __batteryCharging ? Infinity : 0,
+            dischargingTime: __batteryCharging ? 0 : Math.round(__batteryRng() * 10000 + 3000),
+            level: __batteryLevel,
+            addEventListener: () => {},
+            removeEventListener: () => {},
+            onchargingchange: null,
+            onchargingtimechange: null,
+            ondischargingtimechange: null,
+            onlevelchange: null,
+        });
+    }
 
     // ── 12. Font fingerprint evasion ──
     // Anti-bot enumerates installed fonts via CSS measurement.

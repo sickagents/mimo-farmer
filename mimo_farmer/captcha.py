@@ -494,15 +494,15 @@ async def detect_audio_challenge_available(bframe) -> bool:
         return False
 
 
-async def solve_recaptcha(page, max_retries: int = CAPTCHA_MAX_RETRIES) -> bool:
+async def solve_recaptcha(page, max_retries: int = CAPTCHA_MAX_RETRIES, captcha_mode: str = 'auto') -> bool:
     """Audio-based reCAPTCHA v2 solver.
 
     Steps:
     1. Find anchor frame (recaptcha anchor)
     2. Click checkbox — check auto-pass
     3. Find bframe challenge (CRITICAL: uses 'bframe' in frame.url)
-    4. Detect if audio challenge is available
-    5. If audio available: switch to audio challenge, solve via STT
+    4. If captcha_mode == 'manual': skip audio, wait for user to solve everything
+    5. If captcha_mode == 'auto': detect audio availability, solve via STT
     6. If audio NOT available: pause for manual image solving
 
     Returns True if solved, False otherwise.
@@ -566,7 +566,31 @@ async def solve_recaptcha(page, max_retries: int = CAPTCHA_MAX_RETRIES) -> bool:
         print("  [!] No challenge frame")
         return False
 
-    # Detect if audio challenge is available
+    # Manual mode: skip audio STT, wait for user to solve everything
+    if captcha_mode == 'manual':
+        print()
+        print("  " + "=" * 50)
+        print("  [captcha] MANUAL MODE — solve reCAPTCHA in browser.")
+        print("  [captcha] Waiting for you to solve (auto-detect)...")
+        print("  " + "=" * 50)
+        print()
+        # Poll checkbox state instead of blocking on input()
+        for _ in range(180):  # 6 minutes max
+            await asyncio.sleep(2)
+            try:
+                checked = await anchor.evaluate(
+                    "document.getElementById('recaptcha-anchor').getAttribute('aria-checked')"
+                )
+                if checked == 'true':
+                    print("  [captcha] Solved manually!")
+                    return True
+            except Exception:
+                print("  [captcha] Frame detached after manual solve (solved!)")
+                return True
+        print("  [!] Manual solve timeout (6 min)")
+        return False
+
+    # Auto mode: detect if audio challenge is available
     audio_available = await detect_audio_challenge_available(bframe)
 
     if not audio_available:
@@ -576,24 +600,25 @@ async def solve_recaptcha(page, max_retries: int = CAPTCHA_MAX_RETRIES) -> bool:
         print("  [captcha] AUDIO CHALLENGE NOT AVAILABLE")
         print("  [captcha] Image challenge detected — requires manual solving.")
         print("  [captcha] Please solve the CAPTCHA in the browser window.")
-        print("  [captcha] Press ENTER here when done...")
+        print("  [captcha] Waiting for you to solve (auto-detect)...")
         print("  " + "=" * 50)
         print()
-        input()
 
-        # Check if solved after manual intervention
-        try:
-            checked = await anchor.evaluate(
-                "document.getElementById('recaptcha-anchor').getAttribute('aria-checked')"
-            )
-            if checked == 'true':
-                print("  [captcha] Solved manually!")
+        # Poll checkbox state instead of blocking on input()
+        for _ in range(180):
+            await asyncio.sleep(2)
+            try:
+                checked = await anchor.evaluate(
+                    "document.getElementById('recaptcha-anchor').getAttribute('aria-checked')"
+                )
+                if checked == 'true':
+                    print("  [captcha] Solved manually!")
+                    return True
+            except Exception:
+                print("  [captcha] Frame detached after manual solve (solved!)")
                 return True
-        except Exception:
-            print("  [captcha] Frame detached after manual solve (solved!)")
-            return True
 
-        print("  [!] Manual solve did not complete")
+        print("  [!] Manual solve timeout (6 min)")
         return False
 
     # Audio challenge IS available — use automated solver
@@ -613,6 +638,16 @@ async def solve_recaptcha(page, max_retries: int = CAPTCHA_MAX_RETRIES) -> bool:
             print(f"  [captcha] Frame detached (solved!) on attempt {attempt}")
             return True
 
+        # Check for IP block ("automated queries" / "Try again later") in bframe
+        try:
+            full_text = await bframe.evaluate("document.body?.innerText || ''")
+            if 'automated queries' in full_text.lower() or \
+               ('try again later' in full_text.lower() and 'protect our users' in full_text.lower()):
+                print(f"  [!] IP BLOCKED: automated queries detected in reCAPTCHA")
+                return 'ip_blocked'
+        except Exception:
+            pass
+
         # Get audio source URL from bframe context
         audio_url = await bframe.evaluate("document.querySelector('#audio-source')?.src || null")
         if not audio_url:
@@ -621,7 +656,7 @@ async def solve_recaptcha(page, max_retries: int = CAPTCHA_MAX_RETRIES) -> bool:
             )
             if 'automated' in err.lower():
                 print(f"  [!] Rate limited: {err}")
-                return False
+                return 'ip_blocked'
             # Check if we're still on image mode (audio button visible means not switched yet)
             is_image_mode = await bframe.evaluate(
                 "!!document.querySelector('#recaptcha-audio-button') && !document.querySelector('#audio-source')"

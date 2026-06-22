@@ -4,43 +4,81 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.10+-3776AB.svg?style=for-the-badge&logo=python&logoColor=white" alt="Python">
-  <img src="https://img.shields.io/badge/version-2.1.0-00ff88.svg?style=for-the-badge" alt="Version">
+  <img src="https://img.shields.io/badge/version-2.2.0-00ff88.svg?style=for-the-badge" alt="Version">
   <img src="https://img.shields.io/badge/license-MIT-green.svg?style=for-the-badge" alt="License">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg?style=for-the-badge" alt="Platform">
 </p>
 
 <p align="center">
-  <b>Automated Xiaomi MiMo account creation with referral bonuses, anti-detect browser, and API key extraction.</b><br>
-  <sub>Siklus mode (1 main + 5 children) | reCAPTCHA audio bypass | Manual Xiaomi CAPTCHA | Batch output</sub>
+  <b>Automated Xiaomi MiMo account creation with referral bonuses, CDP anti-detect browser, and API key extraction.</b><br>
+  <sub>Auto-farm target balance | CDP mode (Chrome DevTools Protocol) | ADB IP rotation | 14-layer anti-detect | reCAPTCHA audio bypass</sub>
 </p>
 
 ---
 
-## Features
+## ✨ Features
+
+### 🎯 Core Features
 
 | Feature | Description |
 |---------|-------------|
-| 🔄 **Siklus Mode** | Auto-create 1 main + 5 children per cycle — 6 accounts, each child uses own referral |
+| 🎯 **Auto-Farm Mode** | Create accounts until target balance reached (e.g., $20) |
+| 🔄 **Siklus Mode** | Auto-create 1 main + 5 children per cycle — 6 accounts, $14.32 per cycle |
+| 🌐 **CDP Mode (Default)** | Chrome DevTools Protocol — uses real Chrome browser, zero automation detect |
 | 🎙 **reCAPTCHA v2 Audio Solver** | Free Google STT — no paid API needed |
-| 🖊 **Manual Xiaomi CAPTCHA** | Text CAPTCHA shown to user for manual solve (more reliable than OCR) |
-| 📧 **Auto OTP** | generator.email integration with auto-polling and body code extraction |
+| 🖊 **Manual Xiaomi CAPTCHA** | Text CAPTCHA shown to user for manual solve |
+| 📧 **Auto OTP** | generator.email integration with auto-polling |
 | 🔐 **Identity Verification** | Handles Xiaomi's double-OTP verification automatically |
 | 📋 **Terms Dialog** | React/Ant Design checkbox fix via trusted click events |
 | 🎁 **Referral Codes** | Automatic referral code binding via UI flow |
-| 🛡 **Risk Control Detection** | Detects flagged accounts, stops batch, suggests new referral code |
-| 💰 **Balance Verification** | Confirms $2.72 referral bonus before proceeding |
-| 🔑 **API Key Extraction** | Network intercept + clipboard fallback for full unmasked keys |
-| 🕵️ **Anti-Detection** | UA/viewport/timezone spoofing, webdriver override, WebGL spoof, human typing |
-| 📦 **Batch Output** | Single `batch_*.txt` file with all `[N] Mail/Pw/Api-Key` — no per-account files |
+| 🛡 **Risk Control Detection** | Detects flagged accounts, stops batch |
+| 💰 **Balance Verification** | Confirms $2.72 referral bonus |
+| 🔑 **API Key Extraction** | Network intercept + clipboard fallback |
+| 📦 **Batch Output** | Single `batch_*.txt` file with all credentials |
 | ⚡ **Fast Mode** | Reduced delays for quicker creation |
 | 🔄 **Parallel Mode** | Multiple browser instances simultaneously |
 | ♾️ **Continuous Mode** | Keep creating until risk control detected |
-| 🔄 **IP Rotation** | Prompted every 4 accounts in continuous/siklus mode |
 
-## Pipeline
+### 🔒 Advanced Anti-Detect (14 Layers)
 
-1. **Anti-Detect Setup** — Stealth browser with spoofed UA, viewport, timezone, WebGL, webdriver override
-2. **Navigate** — Opens Xiaomi signup page via Patchright
+| # | Layer | Description |
+|---|-------|-------------|
+| 1 | **CDP Mode** | Real Chrome browser — `navigator.webdriver = false` naturally |
+| 2 | **User Agent** | Randomized from pool of 10 real Chrome UAs |
+| 3 | **Viewport** | Randomized common resolutions (1920x1080, 1366x768, etc.) |
+| 4 | **Timezone** | Auto-detected from locale |
+| 5 | **WebGL** | Full parameter spoofing (vendor, renderer, MAX_TEXTURE_SIZE, etc.) |
+| 6 | **Canvas Noise** | Seeded deterministic noise (consistent per profile) |
+| 7 | **AudioContext** | Deterministic buffer spoofing |
+| 8 | **Navigator.connection** | Spoof network info (4g, downlink, rtt) |
+| 9 | **Battery API** | Spoof battery level, charging status |
+| 10 | **WebRTC** | Block IP leak behind VPN/proxy |
+| 11 | **Screen Properties** | Spoof colorDepth, pixelDepth |
+| 12 | **Font Fingerprint** | Platform-specific font filtering |
+| 13 | **Hardware** | Spoof hardwareConcurrency, deviceMemory |
+| 14 | **Human Behavior** | Bezier-curve mouse, variable typing speed |
+
+### 🌐 IP Rotation Methods
+
+| Method | Description | Speed |
+|--------|-------------|-------|
+| **ADB Airplane** | Toggle airplane mode via Android USB | ~15s |
+| **ADB Data** | Toggle mobile data via Android USB | ~8s |
+| **Free Proxy** | Auto-rotate from 7 sources (~7,700 proxies) | Variable |
+| **Manual VPN** | Prompt user to change IP manually | Manual |
+
+### 🎯 Smart Features
+
+- **Ctrl+C Handler** — Save progress when interrupted
+- **IP Check** — Show current IP before start and after rotation
+- **Random Delay** — 40-60s between accounts (anti-detection)
+- **Parent Bonus Tracking** — Accurately count $2 bonus per child to parent
+- **Child Optimization** — Skip extract referral code for child accounts (save 4-5s per account)
+
+## 📋 Pipeline
+
+1. **Anti-Detect Setup** — CDP mode with real Chrome browser or stealth Patchright with 14-layer anti-detect
+2. **Navigate** — Opens Xiaomi signup page
 3. **Fill Form** — Random email (generator.email) + random password
 4. **CAPTCHA Handling**:
    - **reCAPTCHA v2** → Automated audio solver (Google STT, ~90% accuracy)
@@ -56,6 +94,37 @@
 13. **API Key** — Creates key, captures full 51-char key via network intercept (fallback: clipboard)
 14. **Save** — Credentials saved to single batch file in `accounts/`
 
+### Auto-Farm Mode Flow
+
+```
+Target: $20.00
+
+Account 1 (MAIN):
+  Email: abc@domain.com
+  Referral: (none — main account)
+  Balance: $0.72
+  Referral Code: AU2CHB
+  Total: $0.72 / $20.00
+
+[vpn] Ganti IP kamu sekarang (VPN/mobile hotspot).
+Tekan ENTER kalau udah ganti IP...
+  ✅ IP changed! Current IP: 114.10.41.203
+
+[delay] Waiting 56s before next account...
+
+Account 2 (CHILD, referral: AU2CHB):
+  Email: xyz@domain.com
+  Balance: $2.72 (+$2.00 to parent)
+  Total: $5.44 / $20.00
+
+... (continue until total >= $20)
+
+✅ AUTO-FARM COMPLETE
+Target: $20.00
+Achieved: $20.48
+Accounts saved: 8
+```
+
 ### Siklus Mode Flow
 
 ```
@@ -68,6 +137,25 @@ Siklus 1:
   └─ Child 5 (referral: XJ6YSS) → $2.72 balance
 
 Total: 6 accounts, $14.32 combined balance
+```
+
+### Referral Bonus Structure
+
+```
+Parent Account:
+  - Signup bonus: $0.72
+  - Per child referral: +$2.00
+  - 5 children total: $0.72 + (5 × $2.00) = $10.72
+
+Child Account:
+  - Signup bonus: $0.72
+  - Referral bonus: +$2.00
+  - Total per child: $2.72
+
+Combined (1 parent + 5 children):
+  - Parent: $10.72
+  - Children: 5 × $2.72 = $13.60
+  - Grand total: $24.32
 ```
 
 ## Installation
@@ -90,40 +178,68 @@ sudo apt install ffmpeg
 
 # Install Patchright browser (anti-detect Chromium)
 python -m patchright install chromium
+
+# (Optional) Install ADB for Android IP rotation
+# Windows:
+winget install adb
+# macOS:
+brew install android-platform-tools
+# Linux:
+sudo apt install android-tools-adb
 ```
 
 ### Requirements
 
 - Python 3.10+ (3.12 recommended)
+- Google Chrome (for CDP mode)
 - ffmpeg (system dependency)
 - Patchright (auto-installed with pip)
+- (Optional) ADB + Android device with USB tethering (for auto IP rotation)
 
 ## Usage
 
-### Siklus Mode (Recommended)
+### Auto-Farm Mode (Recommended)
+
+Create accounts until target balance reached. Uses CDP mode by default.
+
+```bash
+# Step 1: Launch Chrome with remote debugging
+"C:\Program Files\Google\Chrome\Application\chrome.exe" ^
+  --remote-debugging-port=9222 ^
+  --user-data-dir="C:\Users\YOU\chrome-debug-real"
+
+# Step 2: Run auto-farm (in another terminal)
+mimo create --target-balance 20 --captcha manual
+
+# With ADB IP rotation (Android USB tethering)
+mimo create --target-balance 20 --captcha manual --ip-rotate adb
+mimo create --target-balance 20 --captcha manual --ip-rotate data  # faster
+
+# With auto reCAPTCHA audio solver
+mimo create --target-balance 20 --captcha auto --ip-rotate adb
+
+# Disable CDP (use Patchright with random fingerprint per account)
+mimo create --target-balance 20 --captcha manual --no-cdp
+```
+
+### Siklus Mode
 
 ```bash
 # 1 siklus = 1 main + 5 children = 6 accounts
 mimo create --siklus
 
 # Multiple siklus
-# (interactive prompt asks how many)
+mimo create --siklus --count 3  # 3 siklus = 18 accounts
 
-# Fast mode
-mimo create --siklus --fast
+# With CDP mode (default)
+mimo create --siklus --cdp-url http://localhost:9222
 ```
 
-### Single Account
+### Single / Multiple Accounts
 
 ```bash
 mimo create --referral ABC123 --count 1
-```
-
-### Multiple Accounts
-
-```bash
 mimo create --referral ABC123 --count 5
-mimo create --referral ABC123 --count 5 --fast
 ```
 
 ### Parallel Mode
@@ -135,9 +251,28 @@ mimo create --referral ABC123 --count 10 --parallel 3
 ### Continuous Mode
 
 ```bash
-# Keep creating until risk control detected
+# Keep creating until risk control detected (Ctrl+C to stop)
 mimo create --referral ABC123 --continuous
-mimo create --referral ABC123 -c --fast
+```
+
+### All CLI Options
+
+```
+mimo create [OPTIONS]
+
+Options:
+  --count, -n N          Number of accounts to create
+  --referral, -r CODE    Referral code to use
+  --captcha MODE         Captcha mode: 'auto' or 'manual' (default: manual)
+  --target-balance, -t   Auto-farm until total balance reaches target (e.g., 20)
+  --siklus               Siklus mode: 1 main + 5 children per cycle
+  --continuous           Keep creating until risk control
+  --parallel, -p N       Number of parallel browser instances
+  --proxy                Use free proxy rotation
+  --ip-rotate METHOD     ADB IP rotation: 'adb' (airplane ~15s) or 'data' (toggle ~8s)
+  --cdp-url URL          CDP URL (default: http://localhost:9222)
+  --no-cdp               Disable CDP mode, use Patchright instead
+  --fast                 Reduced delays for faster creation
 ```
 
 ### Account Management
@@ -188,25 +323,25 @@ Balance: $2.72
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| Referral Code | `FHAZMU` | Default referral code |
+| Referral Code | `M57JCH` | Default referral code |
 | Password | `papoi123` | Default password (overridable) |
-| Email Domains | 15+ domains | Auto-scraped from generator.email (fallback: `banri.xyz`) |
-| Browser | Patchright | Anti-detect Playwright (Chromium) |
+| CDP URL | `http://localhost:9222` | Chrome DevTools Protocol endpoint |
+| Email Domains | 15+ domains | Auto-scraped from generator.email |
+| Browser | CDP (Chrome) | Real Chrome via CDP, or Patchright with --no-cdp |
 | OTP Timeout | 180s | Max wait for verification email |
 | CAPTCHA | Manual (Xiaomi), Auto (reCAPTCHA) | Text CAPTCHA → user solves; reCAPTCHA → audio STT |
+| Inter-account Delay | 40-60s | Random delay between accounts (anti-detection) |
 
-### Anti-Detection Features
+### CDP Mode vs Patchright Mode
 
-| Feature | Implementation |
-|---------|---------------|
-| User Agent | Real Chrome UA from pool |
-| Viewport | Randomized common resolutions |
-| Timezone | Auto-detected from locale |
-| Webdriver | `navigator.webdriver = false` |
-| WebGL | Spoofed vendor + renderer |
-| Chrome Runtime | `window.chrome` + runtime inject |
-| Typing Speed | Random delays between keystrokes (150-600ms) |
-| Mouse Movement | Human-like randomized paths |
+| Feature | CDP Mode (Default) | Patchright Mode (--no-cdp) |
+|---------|-------------------|---------------------------|
+| **Browser** | Real Chrome (via remote debugging) | Patchright Chromium (anti-detect fork) |
+| **navigator.webdriver** | `false` (naturally) | `false` (JS patch) |
+| **Fingerprint** | Fixed (your Chrome's real fingerprint) | Random per account (14 layers) |
+| **reCAPTCHA trust** | Higher (real Chrome) | Medium (stealth patches) |
+| **Setup required** | Launch Chrome with --remote-debugging-port | None (auto-launch) |
+| **Best for** | Manual captcha mode | Auto captcha mode |
 
 ### Working Email Domains
 
@@ -219,12 +354,15 @@ mimo-farmer/
 ├── mimo_farmer/
 │   ├── __init__.py       # Package version
 │   ├── __main__.py       # Entry point (python -m mimo_farmer)
-│   ├── cli.py            # Argparse CLI — siklus, continuous, parallel, sequential
+│   ├── cli.py            # Argparse CLI — auto-farm, siklus, continuous, parallel
 │   ├── creator.py        # Core pipeline: signup, CAPTCHA, OTP, referral, API key
 │   ├── captcha.py        # reCAPTCHA v2 audio solver + Xiaomi text CAPTCHA detection
 │   ├── email_handler.py  # generator.email OTP polling
 │   ├── config.py         # Default settings + constants
-│   └── anti_detect.py    # Stealth browser config (UA, viewport, WebGL, etc.)
+│   ├── anti_detect.py    # 14-layer stealth browser config (UA, WebGL, WebRTC, etc.)
+│   ├── adb_ip_rotate.py  # ADB IP rotation via Android USB tethering
+│   ├── proxy_manager.py  # Free proxy rotation from 7 sources (~7,700 proxies)
+│   └── web/              # Web UI (FastAPI + WebSocket)
 ├── accounts/             # Batch output files (gitignored)
 ├── docs/
 │   ├── DOCUMENTATION.md  # Full technical documentation
