@@ -318,6 +318,11 @@ Api-Key: sk-xyz1234567890abcdefghijklmnopqrstuvwxyz
 Balance: $2.72
 
 Total Balance: $10.16
+
+Apikey:
+sk-s2nnxo2labcdef1234567890abcdefghijklmnopqrstuvwxyz
+sk-t98abcd1234567890abcdefghijklmnopqrstuvwxyz
+sk-xyz1234567890abcdefghijklmnopqrstuvwxyz
 ```
 
 > **Note:** API keys are only saved to local files — they are never transmitted anywhere.

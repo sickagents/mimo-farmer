@@ -1125,6 +1125,10 @@ def _save_combined(results: list, referral: str) -> None:
         lines.append("")
 
     lines.append(f"Total Balance: ${total_balance:.2f}")
+    lines.append("")
+    lines.append("Apikey:")
+    for creds in valid:
+        lines.append(str(creds.get('api_key', 'N/A')))
 
     with open(combined_path, "w") as f:
         f.write("\n".join(lines))
