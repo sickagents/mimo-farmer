@@ -1094,6 +1094,7 @@ def _save_combined(results: list, referral: str) -> None:
             child_count_by_ref[creds['referral']] = child_count_by_ref.get(creds['referral'], 0) + 1
 
     lines = []
+    total_balance = 0.0
     for i, creds in enumerate(valid, 1):
         api_key = creds.get('api_key', 'N/A')
         # Validate: warn if key is masked
@@ -1110,6 +1111,10 @@ def _save_combined(results: list, referral: str) -> None:
             except ValueError:
                 base = float(creds.get('gift_balance') or 0)
             balance = f"${base + 2.0 * child_count_by_ref.get(creds.get('own_referral'), 0):.2f}"
+        try:
+            total_balance += float(str(balance).replace('$', '').strip() or 0)
+        except ValueError:
+            pass
         
         lines.append(header)
         lines.append(f"Mail: {creds['email']}")
@@ -1118,6 +1123,8 @@ def _save_combined(results: list, referral: str) -> None:
         lines.append(f"Api-Key: {api_key}")
         lines.append(f"Balance: {balance}")
         lines.append("")
+
+    lines.append(f"Total Balance: ${total_balance:.2f}")
 
     with open(combined_path, "w") as f:
         f.write("\n".join(lines))

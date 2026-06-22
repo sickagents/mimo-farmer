@@ -316,6 +316,8 @@ Link: https://generator.email/xyz@domain.com
 Pw: MmAbc123!9
 Api-Key: sk-xyz1234567890abcdefghijklmnopqrstuvwxyz
 Balance: $2.72
+
+Total Balance: $10.16
 ```
 
 > **Note:** API keys are only saved to local files — they are never transmitted anywhere.
