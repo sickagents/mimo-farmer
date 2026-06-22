@@ -1132,6 +1132,16 @@ async def create_account(
             )
             page = await context.new_page()
 
+        async def close_session():
+            """Close current page only in CDP mode; never kill user's Chrome."""
+            if cdp_url:
+                try:
+                    await page.close()
+                except Exception:
+                    pass
+            else:
+                await browser.close()
+
         # Longer timeouts when using proxy (slow connection)
         if proxy_config and not cdp_url:
             context.set_default_timeout(60000)  # 60s for actions
@@ -1165,7 +1175,7 @@ async def create_account(
 
         if not signup_ready:
             print("  [!] Signup form not loaded — aborting")
-            await browser.close()
+            await close_session()
             return None
         print("  Signup form ready")
         timer.phase("Navigate + signup tab")
@@ -1214,7 +1224,7 @@ async def create_account(
             print("  Form filled")
         except Exception as e:
             print(f"  [!] Form fill error: {e}")
-            await browser.close()
+            await close_session()
             return None
         timer.phase("Fill form")
 
@@ -1327,7 +1337,7 @@ async def create_account(
                     captcha_ok = await solve_text_captcha(page)
                     if not captcha_ok:
                         print("[X] Xiaomi text CAPTCHA failed!")
-                        await browser.close()
+                        await close_session()
                         return None
                     await asyncio.sleep(2)
                     continue
@@ -1396,7 +1406,7 @@ async def create_account(
                         print("  [!] IP lo di-flag sama Google reCAPTCHA.")
                         print("  [!] Ganti IP (VPN/residential proxy) dulu.")
                         print("  " + "!" * 50)
-                        await browser.close()
+                        await close_session()
                         return {
                             "ip_blocked": True,
                             "email": email,
@@ -1417,7 +1427,7 @@ async def create_account(
                         print("  [!] IP lo di-flag sama Google reCAPTCHA.")
                         print("  [!] Ganti IP (VPN/residential proxy) dulu.")
                         print("  " + "!" * 50)
-                        await browser.close()
+                        await close_session()
                         return {
                             "ip_blocked": True,
                             "email": email,
@@ -1433,7 +1443,7 @@ async def create_account(
                         recaptcha_solved = True
                     else:
                         print("[X] reCAPTCHA failed!")
-                        await browser.close()
+                        await close_session()
                         return None
                     await asyncio.sleep(2)
                     continue
@@ -1517,7 +1527,7 @@ async def create_account(
                 if cdp_url:
                     await page.close()
                 else:
-                    await browser.close()
+                    await close_session()
                 return {
                     "unsafe_email": True,
                     "domain": domain,
@@ -1536,7 +1546,7 @@ async def create_account(
         if not code:
             print("[X] OTP not received!")
             await asyncio.sleep(30)
-            await browser.close()
+            await close_session()
             return None
         timer.phase("OTP receive")
 
@@ -1656,7 +1666,7 @@ async def create_account(
         # If referral not found — skip API key, return early for replacement
         if referral_not_found:
             print(f"  [!] Referral '{referral_code}' not found — skipping API key, returning for replacement.")
-            await browser.close()
+            await close_session()
             return {
                 "email": email,
                 "password": password,
@@ -1676,7 +1686,7 @@ async def create_account(
         risk_control = await detect_risk_control(page)
         if risk_control:
             print("  [!] Risk control detected — STOPPING. Create new referral code.")
-            await browser.close()
+            await close_session()
             return {
                 "email": email,
                 "password": password,
@@ -1716,7 +1726,7 @@ async def create_account(
             if domain not in DOMAINS_BLOCKLIST:
                 DOMAINS_BLOCKLIST.append(domain)
                 print(f"  [!] Domain '{domain}' flagged by Xiaomi (balance $0.00) — added to blocklist")
-            await browser.close()
+            await close_session()
             return {
                 "domain_flagged": True,
                 "domain": domain,
@@ -1737,7 +1747,7 @@ async def create_account(
 
         if not api_key:
             print("[X] API key missing — stopping. Not a success.")
-            await browser.close()
+            await close_session()
             return None
 
         # Phase 12: Save credentials (includes risk_control flag)
@@ -1770,7 +1780,7 @@ async def create_account(
         except Exception:
             pass
 
-        await browser.close()
+        await close_session()
 
         print()
         print("=" * 60)
