@@ -40,3 +40,27 @@ EMAIL_DOMAINS = ["ferd.live", "gudri.com", "cihuy.net"]
 
 # Domains flagged by Xiaomi — always excluded even if scraped
 DOMAINS_BLOCKLIST = ["banri.xyz", "embege.xyz"]
+
+
+def add_domain_to_blocklist(domain: str, reason: str = "") -> bool:
+    """Add a domain to blocklist and persist it to this config file."""
+    domain = (domain or "").strip().lower()
+    if not domain or domain in DOMAINS_BLOCKLIST:
+        return False
+
+    DOMAINS_BLOCKLIST.append(domain)
+    DOMAINS_BLOCKLIST.sort()
+
+    try:
+        from pathlib import Path
+        path = Path(__file__)
+        text = path.read_text(encoding="utf-8")
+        old = text.split("DOMAINS_BLOCKLIST = ", 1)[1].split("\n", 1)[0]
+        new = repr(DOMAINS_BLOCKLIST)
+        path.write_text(text.replace(f"DOMAINS_BLOCKLIST = {old}", f"DOMAINS_BLOCKLIST = {new}", 1), encoding="utf-8")
+    except Exception:
+        pass
+
+    note = f" ({reason})" if reason else ""
+    print(f"  [!] Domain '{domain}' added to persistent blocklist{note}")
+    return True

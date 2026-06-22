@@ -805,7 +805,7 @@ def _run_target_balance(target: float, captcha_mode: str, ip_rotate: str, cdp_ur
     7. Stop when total_bonus >= target
     """
     from mimo_farmer.creator import create_account_with_retry
-    from mimo_farmer.config import DOMAINS_BLOCKLIST
+    from mimo_farmer.config import add_domain_to_blocklist
 
     total_bonus = 0.0
     saved_accounts = []
@@ -937,9 +937,7 @@ def _run_target_balance(target: float, captcha_mode: str, ip_rotate: str, cdp_ur
             # Check domain flagged (bonus $0)
             if result.get('domain_flagged'):
                 domain = result.get('domain', '')
-                if domain and domain not in DOMAINS_BLOCKLIST:
-                    DOMAINS_BLOCKLIST.append(domain)
-                    print(f"  [!] Domain '{domain}' blacklisted (bonus $0)")
+                add_domain_to_blocklist(domain, "bonus $0")
                 continue
 
             # Check gift balance

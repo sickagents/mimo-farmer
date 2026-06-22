@@ -1517,11 +1517,9 @@ async def create_account(
                     print(f"  [!] Preferred domain '{preferred_domain}' rejected — falling back to random domains")
                     available_domains = get_available_domains()
 
-                # Add domain to blocklist
-                from mimo_farmer.config import DOMAINS_BLOCKLIST
-                if domain not in DOMAINS_BLOCKLIST:
-                    DOMAINS_BLOCKLIST.append(domain)
-                    print(f"  [!] Domain '{domain}' blocked (unsafe email) — added to blocklist")
+                # Add domain to persistent blocklist
+                from mimo_farmer.config import add_domain_to_blocklist
+                add_domain_to_blocklist(domain, "unsafe email")
 
                 print(f"  [!] Unsafe email — closing page, retrying with fresh session (attempt {email_signup_attempt})")
                 if cdp_url:
@@ -1722,10 +1720,8 @@ async def create_account(
 
         # Auto-detect flagged domain: balance $0.00 = domain blocked by Xiaomi
         if balance == "$0.00":
-            from mimo_farmer.config import DOMAINS_BLOCKLIST
-            if domain not in DOMAINS_BLOCKLIST:
-                DOMAINS_BLOCKLIST.append(domain)
-                print(f"  [!] Domain '{domain}' flagged by Xiaomi (balance $0.00) — added to blocklist")
+            from mimo_farmer.config import add_domain_to_blocklist
+            add_domain_to_blocklist(domain, "balance $0.00")
             await close_session()
             return {
                 "domain_flagged": True,
