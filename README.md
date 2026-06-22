@@ -218,6 +218,9 @@ mimo create --target-balance 20 --captcha manual --ip-rotate data  # faster
 # With auto reCAPTCHA audio solver
 mimo create --target-balance 20 --captcha auto --ip-rotate adb
 
+# Start signup from platform.xiaomimimo.com first (test: may reduce second OTP)
+mimo create --target-balance 20 --captcha manual --platform-signup
+
 # Disable CDP (use Patchright with random fingerprint per account)
 mimo create --target-balance 20 --captcha manual --no-cdp
 ```
@@ -272,6 +275,7 @@ Options:
   --ip-rotate METHOD     ADB IP rotation: 'adb' (airplane ~15s) or 'data' (toggle ~8s)
   --cdp-url URL          CDP URL (default: http://localhost:9222)
   --no-cdp               Disable CDP mode, use Patchright instead
+  --platform-signup      Start from platform.xiaomimimo.com then click Sign up
   --fast                 Reduced delays for faster creation
 ```
 

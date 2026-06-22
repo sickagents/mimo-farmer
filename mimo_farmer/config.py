@@ -8,6 +8,7 @@ DEFAULT_PASSWORD = "papoi123"
 
 # URLs
 SIGNUP_URL = "https://global.account.xiaomi.com/fe/service/register?_locale=en&source=&region=ID&sid=api-platform"
+PLATFORM_URL = "https://platform.xiaomimimo.com"
 BALANCE_URL = "https://platform.xiaomimimo.com/console/balance"
 API_KEYS_URL = "https://platform.xiaomimimo.com/console/api-keys"
 LOGOUT_URL = "https://account.xiaomi.com/pass/logout"

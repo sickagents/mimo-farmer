@@ -107,6 +107,11 @@ examples:
         help="Disable CDP mode — use Patchright browser instead (random fingerprint per account)",
     )
     p_create.add_argument(
+        "--platform-signup",
+        action="store_true",
+        help="Start from platform.xiaomimimo.com and click Sign up before Xiaomi registration",
+    )
+    p_create.add_argument(
         "--parallel", "-p",
         type=int,
         default=1,
@@ -214,8 +219,9 @@ def cmd_create(args) -> int:
         no_cdp = getattr(args, 'no_cdp', False)
         if no_cdp:
             cdp_url = None  # Use Patchright instead
+        platform_signup = getattr(args, 'platform_signup', False)
         print(f"\nMiMo CLI v{__version__}")
-        return _run_target_balance(target_balance, captcha_mode, ip_rotate, cdp_url=cdp_url)
+        return _run_target_balance(target_balance, captcha_mode, ip_rotate, cdp_url=cdp_url, platform_signup=platform_signup)
 
     # --siklus and --continuous don't mix
     if siklus and continuous:
@@ -792,7 +798,7 @@ def _run_siklus(siklus_count: int, captcha_mode: str, use_proxy: bool = False, i
     return 0 if total_success > 0 else 1
 
 
-def _run_target_balance(target: float, captcha_mode: str, ip_rotate: str, cdp_url: str = None) -> int:
+def _run_target_balance(target: float, captcha_mode: str, ip_rotate: str, cdp_url: str = None, platform_signup: bool = False) -> int:
     """Auto-farm: main + children until total bonus >= target.
 
     Flow:
@@ -862,6 +868,7 @@ def _run_target_balance(target: float, captcha_mode: str, ip_rotate: str, cdp_ur
     print(f"\n{'=' * 60}")
     print(f"  AUTO-FARM MODE | Target: ${target:.2f}")
     print(f"  Captcha: {captcha_mode}")
+    print(f"  Platform signup: {'ON' if platform_signup else 'OFF'}")
     print(f"{'=' * 60}")
 
     # Show current IP before starting
@@ -906,6 +913,7 @@ def _run_target_balance(target: float, captcha_mode: str, ip_rotate: str, cdp_ur
                     account_num=account_num,
                     skip_referral=is_main,
                     cdp_url=cdp_url,
+                    platform_signup=platform_signup,
                 ))
             except Exception as e:
                 print(f"  [!] Error: {e}")

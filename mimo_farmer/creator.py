@@ -29,7 +29,7 @@ import time
 from patchright.async_api import async_playwright
 
 from mimo_farmer.config import (
-    DEFAULT_PASSWORD, DEFAULT_REFERRAL_CODE, SIGNUP_URL,
+    DEFAULT_PASSWORD, DEFAULT_REFERRAL_CODE, SIGNUP_URL, PLATFORM_URL,
     BALANCE_URL, API_KEYS_URL, LOGOUT_URL, ACCOUNTS_DIR,
     HUMAN_DELAY_MIN_MS, HUMAN_DELAY_MAX_MS,
 )
@@ -999,6 +999,7 @@ async def create_account(
     preferred_domain: str = None,
     proxy_config: dict = None,
     cdp_url: str = None,
+    platform_signup: bool = False,
 ) -> dict | None:
     """Full MiMo account creation pipeline.
 
@@ -1151,10 +1152,23 @@ async def create_account(
         if not cdp_url:
             await apply_stealth(context, page, fp)
 
-        # Phase 1: Navigate directly to signup page (no tab click needed)
+        # Phase 1: Navigate to signup page
         print("[1] Navigating to signup...")
-        await page.goto(SIGNUP_URL, wait_until='domcontentloaded')
-        await asyncio.sleep(3)
+        if platform_signup:
+            print("  [platform] Opening MiMo platform first...")
+            await page.goto(PLATFORM_URL, wait_until='domcontentloaded')
+            await asyncio.sleep(2)
+            try:
+                await page.get_by_role('button', name='Sign up').click(timeout=10000)
+            except Exception:
+                try:
+                    await page.locator('button:has-text("Sign up")').first.click(timeout=5000)
+                except Exception as e:
+                    print(f"  [platform] Could not click Sign up: {e}")
+            await asyncio.sleep(3)
+        else:
+            await page.goto(SIGNUP_URL, wait_until='domcontentloaded')
+            await asyncio.sleep(3)
 
         # Wait for signup form to render
         signup_ready = False
