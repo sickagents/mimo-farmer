@@ -1433,7 +1433,7 @@ async def create_account(
                             "gift_balance": gift_balance,
                         }
 
-                    captcha_ok = await solve_recaptcha(page, captcha_mode=captcha_mode)
+                    captcha_ok = await solve_recaptcha(page, captcha_mode=captcha_mode, account_num=account_num)
                     if captcha_ok == 'ip_blocked':
                         print()
                         print("  " + "!" * 50)

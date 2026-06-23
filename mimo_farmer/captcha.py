@@ -494,7 +494,7 @@ async def detect_audio_challenge_available(bframe) -> bool:
         return False
 
 
-async def solve_recaptcha(page, max_retries: int = CAPTCHA_MAX_RETRIES, captcha_mode: str = 'auto') -> bool:
+async def solve_recaptcha(page, max_retries: int = CAPTCHA_MAX_RETRIES, captcha_mode: str = 'auto', account_num: int = 1) -> bool:
     """Audio-based reCAPTCHA v2 solver.
 
     Steps:
@@ -566,8 +566,16 @@ async def solve_recaptcha(page, max_retries: int = CAPTCHA_MAX_RETRIES, captcha_
         print("  [!] No challenge frame")
         return False
 
+    # Semi-auto mode logic: 2 auto, 2 manual, repeat
+    if captcha_mode == 'semi-auto':
+        is_auto = ((account_num - 1) % 4) < 2
+        effective_mode = 'auto' if is_auto else 'manual'
+        print(f"  [captcha] Semi-auto cycle: account #{account_num} → using {effective_mode.upper()} mode")
+    else:
+        effective_mode = captcha_mode
+
     # Manual mode: skip audio STT, wait for user to solve everything
-    if captcha_mode == 'manual':
+    if effective_mode == 'manual':
         print()
         print("  " + "=" * 50)
         print("  [captcha] MANUAL MODE — solve reCAPTCHA in browser.")

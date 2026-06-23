@@ -78,10 +78,10 @@ examples:
     )
     p_create.add_argument(
         "--captcha",
-        choices=["auto", "manual"],
+        choices=["auto", "manual", "semi-auto"],
         default=CAPTCHA_MODE_DEFAULT,
         metavar="MODE",
-        help="Captcha mode: 'auto' = reCAPTCHA audio STT, 'manual' = all manual (default: from config)",
+        help="Captcha mode: 'auto' = STT, 'manual' = user solves, 'semi-auto' = 2 auto then 2 manual repeat",
     )
     p_create.add_argument(
         "--proxy",

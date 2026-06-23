@@ -68,7 +68,7 @@ def _run_create(**kwargs) -> int:
 
 def _auto_farm() -> int:
     target = float(_text("Target balance", "42"))
-    captcha = _select("Captcha mode", ["manual", "auto"], "manual")
+    captcha = _select("Captcha mode", ["manual", "auto", "semi-auto"], "manual")
     browser = _select("Browser mode", ["CDP (real Chrome)", "Patchright (--no-cdp)"], "CDP (real Chrome)")
     platform_signup = _confirm("Start from platform.xiaomimimo.com first?", False)
     ip_choice = _select("IP rotation", ["manual VPN/hotspot", "ADB airplane", "ADB data", "free proxy"], "manual VPN/hotspot")
@@ -110,7 +110,7 @@ def _auto_farm() -> int:
 def _single_or_multi() -> int:
     referral = _text("Referral code", "M57JCH").strip().upper()
     count = int(_text("Account count", "1"))
-    captcha = _select("Captcha mode", ["manual", "auto"], "manual")
+    captcha = _select("Captcha mode", ["manual", "auto", "semi-auto"], "manual")
     browser = _select("Browser mode", ["CDP (real Chrome)", "Patchright (--no-cdp)"], "CDP (real Chrome)")
     platform_signup = _confirm("Start from platform.xiaomimimo.com first?", False)
     if not _confirm("Start now?", True):
@@ -126,7 +126,7 @@ def _single_or_multi() -> int:
 
 def _siklus() -> int:
     count = int(_text("Siklus count", "1"))
-    captcha = _select("Captcha mode", ["manual", "auto"], "manual")
+    captcha = _select("Captcha mode", ["manual", "auto", "semi-auto"], "manual")
     browser = _select("Browser mode", ["CDP (real Chrome)", "Patchright (--no-cdp)"], "CDP (real Chrome)")
     if not _confirm("Start now?", True):
         return 0

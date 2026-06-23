@@ -290,7 +290,7 @@ mimo create [OPTIONS]
 Options:
   --count, -n N          Number of accounts to create
   --referral, -r CODE    Referral code to use
-  --captcha MODE         Captcha mode: 'auto' or 'manual' (default: manual)
+  --captcha MODE         Captcha mode: 'auto', 'manual', or 'semi-auto'
   --target-balance, -t   Auto-farm until total balance reaches target (e.g., 20)
   --siklus               Siklus mode: 1 main + 5 children per cycle
   --continuous           Keep creating until risk control
@@ -367,7 +367,7 @@ sk-xyz1234567890abcdefghijklmnopqrstuvwxyz
 | Email Domains | 15+ domains | Auto-scraped from generator.email |
 | Browser | CDP (Chrome) | Real Chrome via CDP, or Patchright with --no-cdp |
 | OTP Timeout | 180s | Max wait for verification email |
-| CAPTCHA | Manual (Xiaomi), Auto (reCAPTCHA) | Text CAPTCHA → user solves; reCAPTCHA → audio STT |
+| CAPTCHA | Manual, Auto, Semi-Auto | Text CAPTCHA → user solves; reCAPTCHA → STT or user depending on mode |
 | Inter-account Delay | 40-60s | Random delay between accounts (anti-detection) |
 
 ### CDP Mode vs Patchright Mode
