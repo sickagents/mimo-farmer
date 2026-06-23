@@ -323,22 +323,22 @@ mimo export --output my_accounts.json
 
 Single batch file in `accounts/batch_YYYYMMDD_HHMMSS.txt`:
 
-```
-[1] — Main
+```txt
+[1] — Main | 22/06/2026
 Mail: 4cniy0m9q8@rexornge.net
 Link: https://generator.email/4cniy0m9q8@rexornge.net
 Pw: MmaTUm11MU!9
 Api-Key: sk-s2nnxo2labcdef1234567890abcdefghijklmnopqrstuvwxyz
 Balance: $4.72
 
-[2]
+[2] — Child | 22/06/2026
 Mail: h7vb2k4@rexornge.net
 Link: https://generator.email/h7vb2k4@rexornge.net
 Pw: MmKp3Xnq7!9
 Api-Key: sk-t98abcd1234567890abcdefghijklmnopqrstuvwxyz
 Balance: $2.72
 
-[3]
+[3] — Child | 22/06/2026
 Mail: xyz@domain.com
 Link: https://generator.email/xyz@domain.com
 Pw: MmAbc123!9

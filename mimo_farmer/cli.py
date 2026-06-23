@@ -1108,7 +1108,9 @@ def _save_combined(results: list, referral: str) -> None:
             print(f"  [!] Account {i}: API key is MASKED ({api_key[:15]}...) — re-run to get full key")
         
         is_main = bool(creds.get('_is_main'))
-        header = f"[{i}] — Main" if is_main else f"[{i}]"
+        role = "Main" if is_main else "Child"
+        date_str = time.strftime("%d/%m/%Y")
+        header = f"[{i}] — {role} | {date_str}"
 
         balance = creds.get('balance', '$0.00')
         if is_main:
