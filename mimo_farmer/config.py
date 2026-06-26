@@ -40,7 +40,7 @@ CAPTCHA_MAX_RETRIES = 5
 EMAIL_DOMAINS = ["ferd.live", "gudri.com", "cihuy.net"]
 
 # Domains flagged by Xiaomi — always excluded even if scraped
-DOMAINS_BLOCKLIST = ["banri.xyz", "embege.xyz"]
+DOMAINS_BLOCKLIST = ['alightmotion.id', 'angiiidayyy.click', 'banri.xyz', 'binancepools.cloud', 'brenlova.com', 'clousy.site', 'embege.xyz', 'gudri.com', 'herilev.top', 'hitbtcpool.cloud', 'kantclass.com', 'mailvip.net', 'mos-kwa.ru', 'nanopools.info', 'ndut.pro', 'nodem.app', 'p-aac.top', 'rawr.foo', 'suntuy.com', 'vectorbrasil.app', 'zumnime.me']
 
 
 def add_domain_to_blocklist(domain: str, reason: str = "") -> bool:
