@@ -1,106 +1,90 @@
 # mimo-farmer
 
-Free public MiMo account creator.
+MiMo account creator CLI.
 
-Free version only exposes one flow:
+Simple flow:
 
 ```powershell
 python -m mimo_farmer create --referral CODE --count N
 ```
 
-Advanced balance runner, siklus, auto-farm, dashboard, CDP tuning, and paid workflow are not exposed in this free CLI. Use `mimo-farmer-reborn` for paid/internal workflow.
-
 ## Features
 
-- Create accounts using a referral code.
-- Create fixed number of accounts with `--count`.
-- Automatic generator.email OTP polling.
-- reCAPTCHA audio solving using existing local pipeline.
-- Xiaomi signup, terms dialog, balance check, API key extraction.
-- Batch TXT output under `accounts/`.
+- Create MiMo accounts with referral code.
+- Set account quantity with `--count`.
+- Automatic OTP polling from generator.email.
+- reCAPTCHA handling through existing pipeline.
+- Xiaomi signup, terms handling, balance check, and API key extraction.
+- Batch TXT output in `accounts/`.
 
 ## Requirements
 
-- Windows 10/11 recommended.
-- Python 3.12 on Rafi's machine:
+- Python 3.12 recommended.
+- Google Chrome / supported browser environment.
+- Project dependencies installed.
+
+Rafi's local Python path:
 
 ```powershell
 C:\Users\rafi\AppData\Local\Programs\Python\Python312\python.exe
 ```
 
-- Existing dependencies installed for this project.
-- `PYTHONPATH` cleared before running on Rafi's machine.
+## Installation
+
+```powershell
+git clone https://github.com/rapoii/mimo-farmer.git
+cd mimo-farmer
+pip install -e .
+```
+
+If running on Rafi's local machine, clear `PYTHONPATH` first:
+
+```powershell
+$env:PYTHONPATH=""
+```
 
 ## Usage
 
-### Help
+### Show help
 
 ```powershell
-cd C:\Users\rafi\mimo-farmer; $env:PYTHONPATH=""; C:\Users\rafi\AppData\Local\Programs\Python\Python312\python.exe -m mimo_farmer --help
+python -m mimo_farmer --help
 ```
 
 ### Create accounts
 
 ```powershell
-cd C:\Users\rafi\mimo-farmer; $env:PYTHONPATH=""; C:\Users\rafi\AppData\Local\Programs\Python\Python312\python.exe -m mimo_farmer create --referral ABC123 --count 5
+python -m mimo_farmer create --referral ABC123 --count 5
 ```
 
-Short flags:
+Short version:
 
 ```powershell
-cd C:\Users\rafi\mimo-farmer; $env:PYTHONPATH=""; C:\Users\rafi\AppData\Local\Programs\Python\Python312\python.exe -m mimo_farmer create -r ABC123 -n 5
+python -m mimo_farmer create -r ABC123 -n 5
 ```
 
-If `--referral` or `--count` is omitted, CLI asks interactively.
+If `--referral` or `--count` is not provided, CLI asks interactively.
 
-## Public CLI
+## Commands
 
 ```text
-usage: mimo [-h] [-V] {create} ...
-
-positional arguments:
-  {create}
-    create       Create MiMo accounts
-
-options:
-  -h, --help     show help
-  -V, --version  show version
+mimo create --referral CODE --count N
 ```
 
-Create command:
-
-```text
-usage: mimo create [-h] [--referral CODE] [--count N]
-
-options:
-  --referral CODE, -r CODE  Referral code to use
-  --count N, -n N           Number of accounts to create
-```
-
-## Removed from free CLI
-
-These modes are intentionally not exposed:
-
-- `--target-balance`
-- `--siklus`
-- `--continuous` / `--auto`
-- `--parallel`
-- `--proxy`
-- `--ip-rotate`
-- `--cdp-url` / `--no-cdp`
-- `--platform-signup`
-- `--captcha`
-- `accounts`, `export`, and `web` subcommands
+| Option | Description |
+|---|---|
+| `--referral`, `-r` | Referral code to use |
+| `--count`, `-n` | Number of accounts to create |
 
 ## Output
 
-Generated files are saved under:
+Output file:
 
 ```text
 accounts\batch_YYYYMMDD_HHMMSS.txt
 ```
 
-Example:
+Example format:
 
 ```text
 [1] | 26/06/2026
@@ -118,14 +102,8 @@ sk-...
 
 Only successful accounts with API key are written.
 
-## Safety before publishing
+## Notes
 
-Generated account files are ignored by Git:
-
-```text
-accounts/*.txt
-accounts/*.json
-accounts/*.csv
-```
-
-Do not commit `.env`, generated credentials, or local account output.
+- Generated account files are ignored by Git.
+- Do not commit `.env`, credentials, or account output files.
+- Use `Ctrl+C` to stop a running batch.
