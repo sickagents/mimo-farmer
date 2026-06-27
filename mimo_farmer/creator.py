@@ -41,6 +41,9 @@ from mimo_farmer.anti_detect import (
 )
 
 
+SESSION_EXPORT_HOOK = None
+
+
 class Timer:
     """Simple phase timer for performance tracking."""
 
@@ -1778,6 +1781,12 @@ async def create_account(
         }
 
         # Per-account files removed — only batch file saved at end of run
+
+        if SESSION_EXPORT_HOOK:
+            try:
+                await SESSION_EXPORT_HOOK(email, page.context)
+            except Exception as e:
+                print(f"  [session] export failed: {e}")
 
         # Phase 13: Logout + clear all traces (for next account in batch)
         print("[14] Logging out...")
