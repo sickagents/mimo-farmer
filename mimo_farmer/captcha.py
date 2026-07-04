@@ -104,7 +104,6 @@ async def solve_text_captcha(page, max_retries: int = 0) -> bool:
     """
     # Skip ddddocr auto-solve — accuracy too low for this CAPTCHA type
     # Go straight to manual solve
-    return await _solve_text_captcha_manual(page)
     # Try auto-solve with ddddocr first
     try:
         import ddddocr

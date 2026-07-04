@@ -8,6 +8,17 @@ import requests
 # --- Proxy Sources ---
 
 SOURCES = [
+    # Premium Webshare proxies (reliable, rotating)
+    {
+        "name": "webshare_premium",
+        "urls": [
+            "http://cwandtrc-rotate:o6s1e06fjwev@p.webshare.io:80",
+            "http://bjhdfoei-rotate:35vzxbtltpmq@p.webshare.io:80",
+            "http://qpcyslfn-rotate:rfruyupsm66k@p.webshare.io:80",
+            "http://ehxtenxr-rotate:60xxi4qgmehg@p.webshare.io:80",
+        ],
+        "format": "premium",
+    },
     {
         "name": "proxifly",
         "url": "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/http/data.txt",
@@ -56,6 +67,10 @@ SOURCES = [
 def _fetch_source(source: dict, timeout: int = 15) -> list[str]:
     """Fetch proxies from a single source."""
     try:
+        # Premium proxies: return directly (no fetch needed)
+        if source["format"] == "premium":
+            return [u.replace("http://", "").replace("https://", "") for u in source.get("urls", [])]
+
         url = source["url"]
         params = source.get("params")
         r = requests.get(url, params=params, timeout=timeout)
