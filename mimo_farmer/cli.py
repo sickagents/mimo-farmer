@@ -229,6 +229,21 @@ def _save_combined(results: list) -> None:
         f.write("\n".join(lines))
 
     print(f"\n  Combined credentials saved: {path}")
+    _save_apikeys(valid)
+
+
+def _save_apikeys(valid: list) -> None:
+    """Save only API keys, one per line, to apikey.txt."""
+    apikeys = [str(r.get("api_key", "")) for r in valid if r.get("api_key")]
+    if not apikeys:
+        return
+
+    os.makedirs(ACCOUNTS_DIR, exist_ok=True)
+    path = os.path.join(ACCOUNTS_DIR, "apikey.txt")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(apikeys) + "\n")
+
+    print(f"  API keys saved: {path} ({len(apikeys)} keys)")
 
 
 def main(argv: list[str] | None = None) -> int:
