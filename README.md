@@ -16,6 +16,7 @@ python -m mimo_farmer create --referral CODE --count N
 - reCAPTCHA handling through existing pipeline.
 - Xiaomi signup, terms handling, balance check, and API key extraction.
 - Batch TXT output in `accounts/`.
+- **Parallel mode** for high-CPU VPS (up to 50 workers).
 
 ## Requirements
 
@@ -51,7 +52,7 @@ $env:PYTHONPATH=""
 python -m mimo_farmer --help
 ```
 
-### Create accounts
+### Create accounts (sequential)
 
 ```powershell
 python -m mimo_farmer create --referral ABC123 --count 5
@@ -65,16 +66,63 @@ python -m mimo_farmer create -r ABC123 -n 5
 
 If `--referral` or `--count` is not provided, CLI asks interactively.
 
+### Create accounts (parallel mode)
+
+```powershell
+python -m mimo_farmer create -r ABC123 -n 30 --workers 20
+```
+
+Short version:
+
+```powershell
+python -m mimo_farmer create -r ABC123 -n 30 -w 20
+```
+
 ## Commands
 
 ```text
-mimo create --referral CODE --count N
+mimo create --referral CODE --count N [--workers W]
 ```
 
 | Option | Description |
 |---|---|
 | `--referral`, `-r` | Referral code to use |
 | `--count`, `-n` | Number of accounts to create |
+| `--workers`, `-w` | Number of parallel workers (default: 1, max: 50) |
+
+## Parallel Mode
+
+For high-CPU VPS, use `--workers` to run multiple account creations simultaneously.
+Each worker gets its own browser instance and proxy IP (Xiaomi detects same-IP bulk
+registration).
+
+### Recommended worker counts
+
+| VPS vCPUs | Workers | Notes |
+|---|---|---|
+| 4-8 | 1-3 | Sequential fine |
+| 16-32 | 5-10 | Moderate parallelism |
+| 64-128 | 15-25 | Good throughput |
+| 160+ | 20-30 | Optimal for 160 vCPU |
+
+**Important constraints:**
+- Each worker uses a separate proxy IP (round-robin from free proxy pool)
+- Semaphore limits concurrent browsers to prevent OOM
+- One worker failure does not stop other workers
+- Default `--workers 1` is identical to sequential mode (backward compatible)
+
+### Examples
+
+```powershell
+# 5 accounts, 1 at a time (default)
+python -m mimo_farmer create -r ABC123 -n 5
+
+# 30 accounts, 20 parallel workers (160 vCPU VPS)
+python -m mimo_farmer create -r ABC123 -n 30 -w 20
+
+# 100 accounts, 30 parallel workers
+python -m mimo_farmer create -r ABC123 -n 100 -w 30
+```
 
 ## Output
 

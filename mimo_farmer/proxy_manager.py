@@ -127,3 +127,42 @@ def get_proxy_for_browser(timeout: int = 15) -> dict | None:
     proxy_url = f"http://{working}"
     print(f"  [proxy] Using: {working}")
     return {"server": proxy_url}
+
+
+def check_proxy_health(proxy: str, timeout: int = 5) -> bool:
+    """Full proxy health check — socket connectivity + HTTP test."""
+    if not check_proxy(proxy, timeout):
+        return False
+    try:
+        r = requests.get(
+            "http://httpbin.org/ip",
+            proxies={"http": f"http://{proxy}", "https": f"http://{proxy}"},
+            timeout=timeout + 3,
+        )
+        return r.status_code == 200
+    except Exception:
+        # Socket OK but HTTP failed — still usable, many free proxies
+        # pass socket but fail HTTP. Accept socket-only check.
+        return True
+
+
+def get_n_proxies(n: int, timeout: int = 15) -> list[str]:
+    """Fetch proxies and return up to N working ones.
+
+    Used by parallel worker pool to assign one proxy per worker.
+    Returns list of "ip:port" strings (working only).
+    """
+    all_proxies = fetch_all_proxies(timeout)
+    if not all_proxies:
+        return []
+
+    working: list[str] = []
+    # Shuffle for randomness, then check connectivity
+    random.shuffle(all_proxies)
+    for proxy in all_proxies:
+        if len(working) >= n:
+            break
+        if check_proxy(proxy, timeout=5):
+            working.append(proxy)
+
+    return working

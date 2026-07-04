@@ -962,12 +962,20 @@ async def create_api_key(page, label: str, captcha_mode: str = 'auto') -> str | 
 DOMAIN_MAX_RETRIES = 3
 
 
-async def create_account_with_retry(**kwargs) -> dict | None:
+async def create_account_with_retry(proxy: dict | None = None, **kwargs) -> dict | None:
     """Wrapper: auto-retries create_account when domain is flagged or email is unsafe.
 
     Detects flagged domains (balance $0.00), unsafe emails, adds to blocklist,
     and retries with a fresh browser + domain up to DOMAIN_MAX_RETRIES times.
+
+    Args:
+        proxy: Proxy config dict (e.g. {"server": "http://ip:port"}) for parallel mode.
+               If provided, overrides any proxy_config in kwargs.
     """
+    # Wire proxy into proxy_config for create_account
+    if proxy is not None:
+        kwargs["proxy_config"] = proxy
+
     last_result = None
     for attempt in range(DOMAIN_MAX_RETRIES):
         result = await create_account(**kwargs)

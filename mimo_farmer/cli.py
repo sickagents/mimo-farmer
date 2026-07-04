@@ -2,6 +2,7 @@
 
 Only exposes referral + count flow:
   mimo create --referral CODE --count N
+  mimo create --referral CODE --count N --workers 20
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ def build_parser() -> argparse.ArgumentParser:
 examples:
   mimo create --referral ABC123 --count 5
   mimo create -r ABC123 -n 5
+  mimo create -r ABC123 -n 30 --workers 20    # parallel mode
 """,
     )
     parser.add_argument("-V", "--version", action="version", version=f"%(prog)s {__version__}")
@@ -51,12 +53,23 @@ examples:
         metavar="N",
         help="Number of accounts to create",
     )
+    p_create.add_argument(
+        "--workers",
+        "-w",
+        type=int,
+        default=1,
+        metavar="W",
+        help="Number of parallel workers (default: 1, max: 50). "
+             "Each worker gets own browser + proxy. "
+             "Recommended: 20-30 for 160 vCPU VPS.",
+    )
     return parser
 
 
 def cmd_create(args) -> int:
     referral = args.referral
     count = args.count
+    workers = max(1, min(args.workers, 50))
 
     if not referral:
         while True:
@@ -80,7 +93,12 @@ def cmd_create(args) -> int:
 
     print(f"\nMiMo CLI v{__version__}")
     print(f"Creating {count} account(s) | Referral: {referral}")
+    if workers > 1:
+        print(f"Parallel mode: {workers} workers")
     print()
+
+    if workers > 1:
+        return _run_parallel(count, referral, workers)
     return _run_sequential(count, referral)
 
 
@@ -122,6 +140,47 @@ def _run_sequential(count: int, referral: str) -> int:
         if result is None:
             print(f"\n  [!] Account {i + 1} failed — stopping batch.")
             break
+
+    success = sum(1 for r in results if r is not None and r.get("api_key"))
+    _save_combined(results)
+    print(f"\n{'=' * 60}")
+    print(f"  Summary: {success}/{count} accounts created")
+    print(f"{'=' * 60}")
+    return 0 if success > 0 else 1
+
+
+def _run_parallel(count: int, referral: str, workers: int) -> int:
+    """Run account creation in parallel using asyncio.gather().
+
+    Each worker gets own browser + proxy. Semaphore limits concurrency.
+    One worker failure does not stop others.
+    """
+    from mimo_farmer.parallel import ParallelWorkerPool
+
+    # Cap concurrency to workers count (don't spawn more semaphores than workers)
+    max_concurrent = min(workers, count)
+
+    pool = ParallelWorkerPool(
+        num_workers=workers,
+        referral_code=referral,
+        captcha_mode=CAPTCHA_MODE_DEFAULT,
+        max_concurrent=max_concurrent,
+    )
+
+    print(f"  Launching {workers} parallel workers for {count} accounts...")
+    print(f"  Max concurrent browsers: {max_concurrent}")
+
+    results_raw = asyncio.run(pool.run(count))
+
+    # Convert WorkerResult to dict format compatible with _save_combined
+    results = []
+    for wr in results_raw:
+        if wr.success and wr.data:
+            results.append(wr.data)
+        else:
+            results.append(wr.data)  # May be None or partial
+
+    print(pool.summary())
 
     success = sum(1 for r in results if r is not None and r.get("api_key"))
     _save_combined(results)
