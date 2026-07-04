@@ -1,157 +1,165 @@
 # mimo-farmer
 
-MiMo account creator CLI.
-
-Simple flow:
-
-```powershell
-python -m mimo_farmer create --referral CODE --count N
-```
+Automated Xiaomi MiMo account creator with referral farming, captcha bypass, and parallel worker support.
 
 ## Features
 
-- Create MiMo accounts with referral code.
-- Set account quantity with `--count`.
-- Automatic OTP polling from generator.email.
-- reCAPTCHA handling through existing pipeline.
-- Xiaomi signup, terms handling, balance check, and API key extraction.
-- Batch TXT output in `accounts/`.
-- **Parallel mode** for high-CPU VPS (up to 50 workers).
+- Automated Xiaomi MiMo account registration
+- reCAPTCHA v2 bypass via audio speech-to-text (free, no paid captcha service)
+- Xiaomi text captcha handling
+- Temp email via generator.email (auto OTP polling)
+- Referral code chaining (siklus mode)
+- API key extraction per account
+- **Parallel mode** for high-CPU VPS (up to 50 concurrent workers)
+- Anti-detection (14 techniques: fingerprint, canvas, WebGL, audio, WebRTC, etc.)
+- Proxy rotation (7 free sources + ADB mobile rotation)
 
 ## Requirements
 
-- Python 3.12 recommended.
-- Google Chrome / supported browser environment.
-- Project dependencies installed.
-
-Example Python command:
-
-```powershell
-python
-```
+- Python 3.10+
+- ffmpeg (for captcha audio conversion)
+- Google Chrome or Chromium
+- Internet connection
 
 ## Installation
 
-```powershell
-git clone https://github.com/rapoii/mimo-farmer.git
+```bash
+git clone https://github.com/sickagents/mimo-farmer.git
 cd mimo-farmer
 pip install -e .
 ```
 
-If running on Rafi's local machine, clear `PYTHONPATH` first:
+Dependencies installed automatically: `patchright`, `SpeechRecognition`, `pydub`, `InquirerPy`
 
-```powershell
-$env:PYTHONPATH=""
-```
+## How to Run
 
-## Usage
+### Sequential (1 account at a time)
 
-### Show help
-
-```powershell
-python -m mimo_farmer --help
-```
-
-### Create accounts (sequential)
-
-```powershell
-python -m mimo_farmer create --referral ABC123 --count 5
+```bash
+python -m mimo_farmer create --referral M57JCH --count 5
 ```
 
 Short version:
 
-```powershell
-python -m mimo_farmer create -r ABC123 -n 5
+```bash
+python -m mimo_farmer create -r M57JCH -n 5
 ```
 
-If `--referral` or `--count` is not provided, CLI asks interactively.
+If `--referral` or `--count` not provided, CLI asks interactively.
 
-### Create accounts (parallel mode)
+### Parallel (multiple workers simultaneously)
 
-```powershell
-python -m mimo_farmer create -r ABC123 -n 30 --workers 20
+```bash
+# 30 accounts with 20 parallel workers
+python -m mimo_farmer create -r M57JCH -n 30 --workers 20
+
+# Short version
+python -m mimo_farmer create -r M57JCH -n 30 -w 20
 ```
 
-Short version:
-
-```powershell
-python -m mimo_farmer create -r ABC123 -n 30 -w 20
-```
-
-## Commands
+### Commands Reference
 
 ```text
 mimo create --referral CODE --count N [--workers W]
 ```
 
-| Option | Description |
-|---|---|
-| `--referral`, `-r` | Referral code to use |
-| `--count`, `-n` | Number of accounts to create |
-| `--workers`, `-w` | Number of parallel workers (default: 1, max: 50) |
+| Option | Short | Default | Description |
+|---|---|---|---|
+| `--referral` | `-r` | (ask) | Referral code to use |
+| `--count` | `-n` | (ask) | Number of accounts to create |
+| `--workers` | `-w` | 1 | Parallel workers (1 = sequential, max 50) |
 
-## Parallel Mode
+## Recommended Worker Counts
 
-For high-CPU VPS, use `--workers` to run multiple account creations simultaneously.
-Each worker gets its own browser instance and proxy IP (Xiaomi detects same-IP bulk
-registration).
-
-### Recommended worker counts
-
-| VPS vCPUs | Workers | Notes |
+| VPS Spec | Workers | Expected Speed |
 |---|---|---|
-| 4-8 | 1-3 | Sequential fine |
-| 16-32 | 5-10 | Moderate parallelism |
-| 64-128 | 15-25 | Good throughput |
-| 160+ | 20-30 | Optimal for 160 vCPU |
+| 2-4 vCPU, 4GB RAM | 1 | ~1 account/min |
+| 8-16 vCPU, 8GB RAM | 3-5 | ~3-5 accounts/min |
+| 32-64 vCPU, 16GB RAM | 10-15 | ~10-15 accounts/min |
+| 128-160 vCPU, 32GB+ RAM | 20-30 | ~20-30 accounts/min |
 
-**Important constraints:**
-- Each worker uses a separate proxy IP (round-robin from free proxy pool)
-- Semaphore limits concurrent browsers to prevent OOM
+**Notes:**
+- Each worker uses a separate proxy IP (Xiaomi detects same-IP bulk registration)
+- Bottleneck is usually IP rate limit, not CPU
+- Recommended: 20-30 workers max even on 160 vCPU
 - One worker failure does not stop other workers
-- Default `--workers 1` is identical to sequential mode (backward compatible)
 
-### Examples
+## Where Output is Saved
 
-```powershell
-# 5 accounts, 1 at a time (default)
-python -m mimo_farmer create -r ABC123 -n 5
-
-# 30 accounts, 20 parallel workers (160 vCPU VPS)
-python -m mimo_farmer create -r ABC123 -n 30 -w 20
-
-# 100 accounts, 30 parallel workers
-python -m mimo_farmer create -r ABC123 -n 100 -w 30
-```
-
-## Output
-
-Output file:
+All output goes to `accounts/` directory (auto-created):
 
 ```text
-accounts\batch_YYYYMMDD_HHMMSS.txt
+accounts/
+├── batch_20260702_153000.txt    # Full account details
+└── apikey.txt                   # API keys only (one per line)
 ```
 
-Example format:
+### batch_YYYYMMDD_HHMMSS.txt
+
+Full account data:
 
 ```text
-[1] | 26/06/2026
-Mail: user@example.com
-Link: https://generator.email/user@example.com
-Pw: password
-Api-Key: sk-...
+[1] | 02/07/2026
+Mail: user123@tmpmail.net
+Link: https://generator.email/user123@tmpmail.net
+Pw: MyP@ssw0rd
+Api-Key: sk-abc123xyz
 Balance: $2.72
 
-Total Balance: $2.72
+[2] | 02/07/2026
+Mail: user456@tmpmail.net
+Link: https://generator.email/user456@tmpmail.net
+Pw: MyP@ssw0rd
+Api-Key: sk-def456xyz
+Balance: $2.72
+
+Total Balance: $5.44
 
 Apikey:
-sk-...
+sk-abc123xyz
+sk-def456xyz
 ```
 
-Only successful accounts with API key are written.
+### apikey.txt
+
+API keys only, one per line (for easy copy/paste):
+
+```text
+sk-abc123xyz
+sk-def456xyz
+sk-ghi789xyz
+```
+
+## Examples
+
+```bash
+# Create 5 accounts sequentially
+python -m mimo_farmer create -r M57JCH -n 5
+
+# Create 100 accounts with 25 parallel workers (high-CPU VPS)
+python -m mimo_farmer create -r M57JCH -n 100 -w 25
+
+# Interactive mode (asks for referral + count)
+python -m mimo_farmer create
+```
+
+## Anti-Detection
+
+Built-in evasion techniques:
+- Browser fingerprint randomization (12 presets)
+- Canvas noise injection (deterministic per profile)
+- WebGL parameter spoofing (12 GL constants)
+- AudioContext fingerprint evasion
+- WebRTC IP leak prevention
+- Human-like typing with variable delays
+- Bezier curve mouse movement
+- Client Hints header matching
+- Font fingerprint filtering
 
 ## Notes
 
-- Generated account files are ignored by Git.
-- Do not commit `.env`, credentials, or account output files.
-- Use `Ctrl+C` to stop a running batch.
+- Use `Ctrl+C` to stop a running batch
+- Account files are git-ignored (do not commit credentials)
+- Each account gets $2.72 balance (with referral) or $0.72 (without)
+- Xiaomi may trigger risk control after many accounts from same IP — change proxy
+- For chain referral mode, each new account uses the previous account's referral code
